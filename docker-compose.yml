@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  recommendation_service:
+    build: .
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:AgAEA7qjSUi1AATuwRXXCCEN3EO8npCD5sEF0gUAgAEA7qjSUi1AATuwRXXCCEN3EO8npCD5sEF0gU@db:5432/postgres
+      - REDIS_URL=redis://redis:6379
+      - DEBUG=true
+      - LOG_LEVEL=info
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - .:/app
+    networks:
+      - mysanta_default
+
+  # Use external services from main docker-compose
+networks:
+  mysanta_default:
+    external: true
