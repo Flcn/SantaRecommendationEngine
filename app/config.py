@@ -6,29 +6,35 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application configuration"""
     
-    # Database
-    database_url: str = "postgresql://postgres:password@localhost:5432/postgres"
+    # Main Database (READ-ONLY for recommendations)
+    main_database_url: str = "postgresql://postgres:password@localhost:5432/mysanta_main"
     
-    # Redis
-    redis_url: str = "redis://localhost:6379"
+    # Recommendations Database (READ/WRITE for recommendations)  
+    recommendations_database_url: str = "postgresql://postgres:password@localhost:5432/mysanta_recommendations"
+    
+    # Redis (separate database for recommendations)
+    recommendations_redis_url: str = "redis://localhost:6379/1"
     
     # Service settings
     debug: bool = False
     log_level: str = "info"
     
     # Cache TTL settings (in seconds)
-    cache_ttl_similarity: int = 14400  # 4 hours
     cache_ttl_popular: int = 900       # 15 minutes  
-    cache_ttl_recommendations: int = 7200  # 2 hours
+    cache_ttl_personalized: int = 7200  # 2 hours
+    cache_ttl_user_profile: int = 14400  # 4 hours
     
     # Performance limits
-    max_similar_users: int = 50
-    max_recommendation_items: int = 200
-    similarity_min_overlap: int = 2
+    max_similar_users: int = 20
+    default_page_size: int = 20
+    max_page_size: int = 100
+    
+    # Background job settings
+    popular_items_refresh_minutes: int = 15
+    user_profile_cache_hours: int = 4
     
     # Query performance limits
     max_query_time: float = 0.5  # 500ms max per query
-    max_items_per_batch: int = 1000
     
     class Config:
         env_file = ".env"

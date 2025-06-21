@@ -1,24 +1,62 @@
 version: '3.8'
 
 services:
-  recommendation_service:
+  recommendation_engine:
     build: .
     ports:
       - "8001:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:AgAEA7qjSUi1AATuwRXXCCEN3EO8npCD5sEF0gUAgAEA7qjSUi1AATuwRXXCCEN3EO8npCD5sEF0gU@db:5432/postgres
-      - REDIS_URL=redis://redis:6379
-      - DEBUG=true
+      # Main database (READ-ONLY for recommendations)
+      - MAIN_DATABASE_URL=postgresql://postgres:password@postgres:5432/mysanta_main
+      # Recommendations database (READ/WRITE for recommendations)
+      - RECOMMENDATIONS_DATABASE_URL=postgresql://postgres:password@postgres:5432/mysanta_recommendations
+      # Redis (separate database for recommendations)
+      - RECOMMENDATIONS_REDIS_URL=redis://redis:6379/1
+      # Service settings
+      - DEBUG=false
       - LOG_LEVEL=info
+      # Performance settings
+      - MAX_SIMILAR_USERS=20
+      - DEFAULT_PAGE_SIZE=20
+      - MAX_PAGE_SIZE=100
+      - POPULAR_ITEMS_REFRESH_MINUTES=15
     depends_on:
-      - db
+      - postgres
       - redis
     volumes:
       - .:/app
     networks:
       - mysanta_default
+    restart: unless-stopped
 
-  # Use external services from main docker-compose
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-recommendations-schema.sql
+    networks:
+      - mysanta_default
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mysanta_default
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
 networks:
   mysanta_default:
     external: true

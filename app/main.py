@@ -10,12 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import db
 from app.models import (
-    RecommendationRequest, 
     PopularItemsRequest, 
+    PersonalizedRequest,
     RecommendationResponse,
     SimilarUsersRequest
 )
-from app.recommendation_service import RecommendationService
+from app.recommendation_service_v2 import RecommendationServiceV2
 
 # Configure logging
 logging.basicConfig(
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan management"""
     # Startup
     logger.info("Starting recommendation service...")
-    await db.init_pool()
+    await db.init_pools()
     logger.info("Recommendation service started successfully")
     
     yield
@@ -63,69 +63,44 @@ app.add_middleware(
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test database connection
-        await db.execute_query("SELECT 1")
+        # Test both database connections
+        await db.execute_main_query("SELECT 1")
+        await db.execute_recommendations_query("SELECT 1")
         return {
             "status": "healthy",
-            "service": "recommendation_engine",
-            "version": "1.0.0"
+            "service": "recommendation_engine_v2",
+            "version": "2.0.0",
+            "databases": ["main", "recommendations"]
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
 
-@app.post("/recommendations", response_model=RecommendationResponse)
-async def get_recommendations(request: RecommendationRequest):
-    """
-    Get personalized recommendations for a user
-    
-    Uses hybrid approach:
-    - Collaborative filtering (users with similar preferences)
-    - Content-based filtering (item features matching user profile)
-    - Popularity-based (trending items)
-    
-    Automatically filters by:
-    - In-stock items only
-    - Geographic region (geo_id)
-    - Platform items only (user_id IS NULL)
-    """
-    try:
-        logger.info(f"Getting recommendations for user {request.user_id}, geo {request.geo_id}")
-        
-        response = await RecommendationService.get_recommendations(request)
-        
-        logger.info(
-            f"Returned {len(response.item_ids)} recommendations "
-            f"(algorithm: {response.algorithm_used}, "
-            f"time: {response.computation_time_ms:.2f}ms)"
-        )
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error getting recommendations: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post("/popular", response_model=RecommendationResponse)
 async def get_popular_items(request: PopularItemsRequest):
     """
-    Get popular/trending items for a geographic region
+    Get popular items based on user demographics
     
-    Returns time-weighted popularity:
-    - Recent interactions count more
-    - Combines likes and clicks
-    - Optionally personalized for specific user
+    Takes user parameters (gender, age, category, geo) and finds 
+    popular items matching those demographics.
+    
+    Uses pre-computed popular_items table for fast response.
+    Applies real-time filters (price, category, etc.) from main DB.
+    Excludes already liked items automatically.
     """
     try:
-        logger.info(f"Getting popular items for geo {request.geo_id}")
+        logger.info(f"Getting popular items for geo {request.user_params.geo_id}, "
+                   f"demographics: {request.user_params.gender}/{request.user_params.age}, "
+                   f"page: {request.pagination.page}")
         
-        response = await RecommendationService.get_popular_items(request)
+        response = await RecommendationServiceV2.get_popular_items(request)
         
         logger.info(
-            f"Returned {len(response.item_ids)} popular items "
-            f"(time: {response.computation_time_ms:.2f}ms)"
+            f"Returned {len(response.items)} popular items "
+            f"(algorithm: {response.algorithm_used}, "
+            f"time: {response.computation_time_ms:.2f}ms, "
+            f"cache_hit: {response.cache_hit})"
         )
         
         return response
@@ -135,72 +110,43 @@ async def get_popular_items(request: PopularItemsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/similar-users")
-async def get_similar_users(request: SimilarUsersRequest):
+@app.post("/personalized", response_model=RecommendationResponse)
+async def get_personalized_recommendations(request: PersonalizedRequest):
     """
-    Find users with similar preferences to the given user
+    Get personalized recommendations based on user's likes
     
-    Based on:
-    - Item overlap (users who liked same items)
-    - Demographic similarity
+    Analyzes user's interaction history and finds suitable items:
+    - Users with 3+ interactions: collaborative filtering
+    - Users with 1-2 interactions: content-based filtering  
+    - New users: popular items fallback
+    
+    Automatically excludes items user has already liked.
+    Applies real-time filters (price, category, etc.).
     """
     try:
-        logger.info(f"Finding similar users for user {request.user_id}")
+        logger.info(f"Getting personalized recommendations for user {request.user_id}, "
+                   f"geo {request.geo_id}, page: {request.pagination.page}")
         
-        similar_users = await RecommendationService.get_similar_users(
-            request.user_id, 
-            request.limit
+        response = await RecommendationServiceV2.get_personalized_recommendations(request)
+        
+        logger.info(
+            f"Returned {len(response.items)} personalized items "
+            f"(algorithm: {response.algorithm_used}, "
+            f"time: {response.computation_time_ms:.2f}ms, "
+            f"cache_hit: {response.cache_hit})"
         )
         
-        logger.info(f"Found {len(similar_users)} similar users")
-        
-        return {
-            "user_id": request.user_id,
-            "similar_users": similar_users,
-            "count": len(similar_users)
-        }
+        return response
         
     except Exception as e:
-        logger.error(f"Error finding similar users: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/similar-items/{item_id}")
-async def get_similar_items(item_id: int, geo_id: int, limit: int = 20):
-    """
-    Find items similar to the given item
-    
-    Based on:
-    - Category similarity
-    - Price similarity  
-    - Platform similarity
-    """
-    try:
-        logger.info(f"Finding similar items for item {item_id}")
-        
-        similar_items = await RecommendationService.get_similar_items(
-            item_id, 
-            geo_id, 
-            limit
-        )
-        
-        logger.info(f"Found {len(similar_items)} similar items")
-        
-        return {
-            "item_id": item_id,
-            "similar_items": similar_items,
-            "count": len(similar_items)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error finding similar items: {e}")
+        logger.error(f"Error getting personalized recommendations: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/user-profile/{user_id}")
 async def get_user_profile(user_id: int):
     """
-    Get user preference profile
+    Get user preference profile from recommendations database
     
     Returns:
     - Category preferences
@@ -209,15 +155,37 @@ async def get_user_profile(user_id: int):
     - Interaction statistics
     """
     try:
-        from app.algorithms.content_based import ContentBasedFilter
-        
         logger.info(f"Getting profile for user {user_id}")
         
-        profile = await ContentBasedFilter.get_user_profile(user_id)
+        # Get profile from recommendations DB
+        query = """
+            SELECT user_id, preferred_categories, preferred_platforms, 
+                   avg_price, price_range_min, price_range_max,
+                   interaction_count, last_interaction_at
+            FROM user_profiles
+            WHERE user_id = $1
+        """
+        
+        profile = await db.execute_recommendations_query_one(query, user_id)
+        
+        if not profile:
+            return {
+                "user_id": user_id,
+                "profile": None,
+                "message": "Profile not found. User may be new or profile needs to be built."
+            }
         
         return {
             "user_id": user_id,
-            "profile": profile
+            "profile": {
+                "preferred_categories": profile['preferred_categories'],
+                "preferred_platforms": profile['preferred_platforms'],
+                "avg_price": profile['avg_price'],
+                "price_range_min": profile['price_range_min'],
+                "price_range_max": profile['price_range_max'],
+                "interaction_count": profile['interaction_count'],
+                "last_interaction_at": str(profile['last_interaction_at']) if profile['last_interaction_at'] else None
+            }
         }
         
     except Exception as e:
@@ -229,8 +197,8 @@ async def get_user_profile(user_id: int):
 async def get_service_stats():
     """Get service statistics and performance metrics"""
     try:
-        # Get some basic stats
-        stats_query = """
+        # Get stats from main database
+        main_stats_query = """
             SELECT 
                 (SELECT COUNT(*) FROM handpicked_presents WHERE status = 'in_stock' AND user_id IS NULL) as total_items,
                 (SELECT COUNT(*) FROM handpicked_likes) as total_likes,
@@ -238,24 +206,87 @@ async def get_service_stats():
                 (SELECT COUNT(DISTINCT user_id) FROM handpicked_likes) as active_users
         """
         
-        stats = await db.execute_query_one(stats_query)
+        main_stats = await db.execute_main_query_one(main_stats_query)
+        
+        # Get stats from recommendations database
+        rec_stats_query = """
+            SELECT 
+                COUNT(*) as cached_popular_items
+            FROM popular_items
+        """
+        
+        rec_stats = await db.execute_recommendations_query_one(rec_stats_query)
+        
+        # Get user profile stats
+        profile_stats_query = """
+            SELECT 
+                COUNT(*) as cached_user_profiles,
+                COUNT(*) FILTER (WHERE interaction_count >= 3) as users_with_collaborative,
+                COUNT(*) FILTER (WHERE interaction_count BETWEEN 1 AND 2) as users_with_content_based
+            FROM user_profiles
+        """
+        
+        profile_stats = await db.execute_recommendations_query_one(profile_stats_query)
         
         return {
-            "service": "recommendation_engine",
-            "statistics": stats,
+            "service": "recommendation_engine_v2",
+            "version": "2.0.0",
+            "main_database": main_stats,
+            "recommendations_database": {
+                **rec_stats,
+                **profile_stats
+            },
             "cache_info": {
-                "redis_connected": db.redis_client is not None,
-                "pool_size": db.pool._con._queue.qsize() if db.pool else 0
+                "redis_connected": db.redis_client is not None
             },
             "configuration": {
                 "max_similar_users": settings.max_similar_users,
-                "max_recommendation_items": settings.max_recommendation_items,
-                "similarity_min_overlap": settings.similarity_min_overlap
+                "default_page_size": settings.default_page_size,
+                "max_page_size": settings.max_page_size,
+                "popular_items_refresh_minutes": settings.popular_items_refresh_minutes
             }
         }
         
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/refresh-popular-items")
+async def manual_refresh_popular_items():
+    """Manually trigger popular items refresh (admin endpoint)"""
+    try:
+        logger.info("Manual popular items refresh triggered")
+        
+        from app.background_jobs import BackgroundJobs
+        await BackgroundJobs.refresh_popular_items()
+        
+        return {
+            "status": "success",
+            "message": "Popular items refreshed successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in manual refresh: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/update-user-profiles")
+async def manual_update_user_profiles():
+    """Manually trigger user profiles update (admin endpoint)"""
+    try:
+        logger.info("Manual user profiles update triggered")
+        
+        from app.background_jobs import BackgroundJobs
+        await BackgroundJobs.update_user_profiles()
+        
+        return {
+            "status": "success",
+            "message": "User profiles updated successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in manual user profiles update: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
