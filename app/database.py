@@ -20,6 +20,10 @@ class DatabaseManager:
     async def init_pools(self):
         """Initialize database connection pools"""
         try:
+            logger.info(f"Connecting to main database: {settings.main_database_url}")
+            logger.info(f"Connecting to recommendations database: {settings.recommendations_database_url}")
+            logger.info(f"Connecting to Redis: {settings.recommendations_redis_url}")
+            
             # Main database pool (READ-ONLY)
             self.main_pool = await asyncpg.create_pool(
                 settings.main_database_url,

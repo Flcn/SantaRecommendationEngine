@@ -7,13 +7,27 @@ class Settings(BaseSettings):
     """Application configuration"""
     
     # Main Database (READ-ONLY for recommendations)
-    main_database_url: str = "postgresql://postgres:password@localhost:5432/mysanta_main"
+    main_database_url: str = "postgresql://postgres:password@db:5432/mysanta_main"
     
     # Recommendations Database (READ/WRITE for recommendations)  
-    recommendations_database_url: str = "postgresql://postgres:password@localhost:5432/mysanta_recommendations"
+    recommendations_database_url: str = "postgresql://postgres:password@db:5432/mysanta_recommendations"
     
     # Redis (separate database for recommendations)
-    recommendations_redis_url: str = "redis://localhost:6379/1"
+    recommendations_redis_url: str = "redis://redis:6379/1"
+    
+    # Docker environment variable compatibility
+    database_url: Optional[str] = None
+    redis_url: Optional[str] = None
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Use DATABASE_URL if provided (for Docker compatibility)
+        if self.database_url:
+            self.main_database_url = self.database_url
+            self.recommendations_database_url = self.database_url
+        # Use REDIS_URL if provided (for Docker compatibility)  
+        if self.redis_url:
+            self.recommendations_redis_url = self.redis_url
     
     # Service settings
     debug: bool = False

@@ -26,8 +26,93 @@ class BackgroundJobs:
             logger.info("Starting popular items refresh...")
             start_time = time.time()
             
-            # Call the stored procedure to refresh popular items
-            await db.refresh_popular_items()
+            # Query main database for popular items data
+            # Note: Rails uses UUIDs for IDs, so we need to convert to string
+            popular_items_query = """
+                SELECT 
+                    hp.geo_id,
+                    COALESCE(hp.categories->>'gender', 'any') as gender,
+                    COALESCE(hp.categories->>'age', 'any') as age_group,
+                    COALESCE(hp.categories->>'category', 'any') as category,
+                    hp.id::text as item_id,  -- Convert UUID to string
+                    
+                    -- Time-weighted popularity score
+                    COALESCE(click_scores.score, 0) + COALESCE(like_scores.score, 0) as popularity_score
+                    
+                FROM handpicked_presents hp
+                LEFT JOIN (
+                    -- Click scores with time weighting
+                    SELECT 
+                        handpicked_present_id,
+                        SUM(
+                            CASE 
+                                WHEN created_at > NOW() - INTERVAL '7 days' THEN 3.0
+                                WHEN created_at > NOW() - INTERVAL '30 days' THEN 2.0
+                                ELSE 1.0
+                            END
+                        ) as score
+                    FROM handpicked_present_clicks 
+                    WHERE created_at > NOW() - INTERVAL '90 days'
+                    GROUP BY handpicked_present_id
+                ) click_scores ON hp.id = click_scores.handpicked_present_id
+                LEFT JOIN (
+                    -- Like scores with time weighting (higher weight than clicks)
+                    SELECT 
+                        handpicked_present_id,
+                        SUM(
+                            CASE 
+                                WHEN created_at > NOW() - INTERVAL '7 days' THEN 5.0
+                                WHEN created_at > NOW() - INTERVAL '30 days' THEN 3.0
+                                ELSE 1.5
+                            END
+                        ) as score
+                    FROM handpicked_likes 
+                    WHERE created_at > NOW() - INTERVAL '90 days'
+                    GROUP BY handpicked_present_id
+                ) like_scores ON hp.id = like_scores.handpicked_present_id
+
+                WHERE hp.status = 'in_stock' 
+                  AND hp.user_id IS NULL
+                  AND (COALESCE(click_scores.score, 0) + COALESCE(like_scores.score, 0)) > 0
+                ORDER BY popularity_score DESC
+                LIMIT 10000
+            """
+            
+            popular_items = await db.execute_main_query(popular_items_query)
+            logger.info(f"Found {len(popular_items)} popular items from main database")
+            
+            # Clear old popular items from recommendations database
+            await db.execute_recommendations_command(
+                "DELETE FROM popular_items WHERE updated_at < NOW() - INTERVAL '1 hour'"
+            )
+            
+            # Insert new popular items into recommendations database
+            if popular_items:
+                insert_values = []
+                params = []
+                param_count = 0
+                
+                for item in popular_items:
+                    param_count += 6
+                    insert_values.append(f"(${param_count-5}, ${param_count-4}, ${param_count-3}, ${param_count-2}, ${param_count-1}, ${param_count}, CURRENT_TIMESTAMP)")
+                    params.extend([
+                        item['geo_id'],
+                        item['gender'],
+                        item['age_group'], 
+                        item['category'],
+                        str(item['item_id']) if item['item_id'] else None,  # Keep UUID as string
+                        float(item['popularity_score']) if item['popularity_score'] else 0.0
+                    ])
+                
+                if insert_values:
+                    insert_query = f"""
+                        INSERT INTO popular_items (geo_id, gender, age_group, category, item_id, popularity_score, updated_at)
+                        VALUES {', '.join(insert_values)}
+                        ON CONFLICT DO NOTHING
+                    """
+                    
+                    await db.execute_recommendations_command(insert_query, *params)
+                    logger.info(f"Inserted {len(popular_items)} popular items into recommendations database")
             
             computation_time = (time.time() - start_time) * 1000
             logger.info(f"Popular items refreshed successfully in {computation_time:.2f}ms")
@@ -47,16 +132,42 @@ class BackgroundJobs:
             start_time = time.time()
             
             # Get users with new likes since last profile update
-            new_interactions_query = """
-                SELECT DISTINCT hl.user_id
-                FROM handpicked_likes hl
-                LEFT JOIN user_profiles up ON hl.user_id = up.user_id
-                WHERE hl.created_at > COALESCE(up.updated_at, '1970-01-01'::timestamp)
-                   OR up.user_id IS NULL
+            # First get users with recent likes from main DB
+            recent_likes_query = """
+                SELECT DISTINCT user_id, MAX(created_at) as latest_like
+                FROM handpicked_likes 
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                GROUP BY user_id
                 LIMIT 1000
             """
             
-            users_to_update = await db.execute_main_query(new_interactions_query)
+            recent_users = await db.execute_main_query(recent_likes_query)
+            
+            if not recent_users:
+                logger.info("No users with recent likes found")
+                return
+            
+            # Then check which ones need profile updates from recommendations DB
+            user_ids = [user['user_id'] for user in recent_users]
+            existing_profiles_query = """
+                SELECT user_id, updated_at
+                FROM user_profiles 
+                WHERE user_id = ANY($1::int[])
+            """
+            
+            existing_profiles = await db.execute_recommendations_query(existing_profiles_query, user_ids)
+            existing_profile_map = {profile['user_id']: profile['updated_at'] for profile in existing_profiles}
+            
+            # Determine which users need updates
+            users_to_update = []
+            for user in recent_users:
+                user_id = user['user_id']
+                latest_like = user['latest_like']
+                
+                # Update if no profile exists or profile is older than latest like
+                if (user_id not in existing_profile_map or 
+                    existing_profile_map[user_id] < latest_like):
+                    users_to_update.append({'user_id': user_id})
             
             if not users_to_update:
                 logger.info("No user profiles need updating")
