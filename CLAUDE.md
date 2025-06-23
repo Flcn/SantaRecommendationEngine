@@ -54,6 +54,8 @@ POST /personalized
 
 ## Development Commands
 
+**IMPORTANT: Do not modify docker-compose.yaml or restart Docker containers unless explicitly requested by the user.**
+
 ### Local Development
 ```bash
 # Install dependencies
