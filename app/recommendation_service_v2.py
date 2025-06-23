@@ -80,6 +80,7 @@ class RecommendationServiceV2:
                 page=request.pagination.page,
                 limit=request.pagination.limit,
                 total_pages=total_pages,
+                total_count=total_count,
                 has_next=request.pagination.page < total_pages,
                 has_previous=request.pagination.page > 1
             )
@@ -176,6 +177,7 @@ class RecommendationServiceV2:
                 page=request.pagination.page,
                 limit=request.pagination.limit,
                 total_pages=total_pages,
+                total_count=total_count,
                 has_next=request.pagination.page < total_pages,
                 has_previous=request.pagination.page > 1
             )

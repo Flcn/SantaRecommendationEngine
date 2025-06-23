@@ -59,6 +59,7 @@ class PaginationInfo(BaseModel):
     page: int
     limit: int
     total_pages: int
+    total_count: int
     has_next: bool
     has_previous: bool
 
