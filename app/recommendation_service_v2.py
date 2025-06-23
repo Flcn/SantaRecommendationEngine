@@ -50,12 +50,16 @@ class RecommendationServiceV2:
                 )
             
             # Get popular items from recommendations DB
+            logger.info(f"[DEBUG] Querying popular items for geo_id: {request.user_params.geo_id}")
             popular_items = await RecommendationServiceV2._query_popular_items(request)
+            logger.info(f"[DEBUG] Found {len(popular_items)} popular items")
             
             # Apply real-time filters from main DB
+            logger.info(f"[DEBUG] Applying filters: {request.filters}")
             filtered_items = await RecommendationServiceV2._apply_filters(
                 popular_items, request.filters, request.user_params.geo_id
             )
+            logger.info(f"[DEBUG] After filtering: {len(filtered_items)} items")
             
             # Calculate pagination
             total_count = len(filtered_items)

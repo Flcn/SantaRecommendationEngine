@@ -30,8 +30,14 @@ class Settings(BaseSettings):
             self.recommendations_redis_url = self.redis_url
     
     # Service settings
+    app_env: str = "development"  # development/production
     debug: bool = False
     log_level: str = "info"
+    
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development mode"""
+        return self.app_env.lower() == "development"
     
     # Cache TTL settings (in seconds)
     cache_ttl_popular: int = 900       # 15 minutes  

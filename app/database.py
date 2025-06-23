@@ -59,27 +59,67 @@ class DatabaseManager:
     
     async def execute_main_query(self, query: str, *args) -> List[Dict[str, Any]]:
         """Execute a query on main database (READ-ONLY)"""
+        if settings.is_development:
+            logger.info(f"[MAIN DB] Executing query: {query}")
+            logger.info(f"[MAIN DB] Parameters: {args}")
+        
         async with self.main_pool.acquire() as conn:
             rows = await conn.fetch(query, *args)
-            return [dict(row) for row in rows]
+            result = [dict(row) for row in rows]
+            
+            if settings.is_development:
+                logger.info(f"[MAIN DB] Result count: {len(result)}")
+                if result and len(result) <= 5:  # Log first few results if small dataset
+                    logger.info(f"[MAIN DB] Sample results: {result}")
+            
+            return result
     
     async def execute_main_query_one(self, query: str, *args) -> Optional[Dict[str, Any]]:
         """Execute a query on main database and return single result"""
+        if settings.is_development:
+            logger.info(f"[MAIN DB ONE] Executing query: {query}")
+            logger.info(f"[MAIN DB ONE] Parameters: {args}")
+        
         async with self.main_pool.acquire() as conn:
             row = await conn.fetchrow(query, *args)
-            return dict(row) if row else None
+            result = dict(row) if row else None
+            
+            if settings.is_development:
+                logger.info(f"[MAIN DB ONE] Result: {result}")
+            
+            return result
     
     async def execute_recommendations_query(self, query: str, *args) -> List[Dict[str, Any]]:
         """Execute a query on recommendations database"""
+        if settings.is_development:
+            logger.info(f"[REC DB] Executing query: {query}")
+            logger.info(f"[REC DB] Parameters: {args}")
+        
         async with self.recommendations_pool.acquire() as conn:
             rows = await conn.fetch(query, *args)
-            return [dict(row) for row in rows]
+            result = [dict(row) for row in rows]
+            
+            if settings.is_development:
+                logger.info(f"[REC DB] Result count: {len(result)}")
+                if result and len(result) <= 5:  # Log first few results if small dataset
+                    logger.info(f"[REC DB] Sample results: {result}")
+            
+            return result
     
     async def execute_recommendations_query_one(self, query: str, *args) -> Optional[Dict[str, Any]]:
         """Execute a query on recommendations database and return single result"""
+        if settings.is_development:
+            logger.info(f"[REC DB ONE] Executing query: {query}")
+            logger.info(f"[REC DB ONE] Parameters: {args}")
+        
         async with self.recommendations_pool.acquire() as conn:
             row = await conn.fetchrow(query, *args)
-            return dict(row) if row else None
+            result = dict(row) if row else None
+            
+            if settings.is_development:
+                logger.info(f"[REC DB ONE] Result: {result}")
+            
+            return result
     
     async def execute_recommendations_command(self, query: str, *args) -> str:
         """Execute a command on recommendations database (INSERT/UPDATE/DELETE)"""
@@ -90,7 +130,15 @@ class DatabaseManager:
         """Get value from cache"""
         try:
             value = self.redis_client.get(key)
-            return json.loads(value) if value else None
+            result = json.loads(value) if value else None
+            
+            if settings.is_development:
+                status = "HIT" if result is not None else "MISS"
+                logger.info(f"[CACHE {status}] Key: {key}")
+                if result and status == "HIT":
+                    logger.info(f"[CACHE HIT] Value type: {type(result)}, size: {len(str(result)) if result else 0}")
+            
+            return result
         except Exception as e:
             logger.warning(f"Cache get error for key {key}: {e}")
             return None
@@ -99,6 +147,10 @@ class DatabaseManager:
         """Set value in cache"""
         try:
             self.redis_client.setex(key, ttl, json.dumps(value))
+            
+            if settings.is_development:
+                logger.info(f"[CACHE SET] Key: {key}, TTL: {ttl}s")
+                logger.info(f"[CACHE SET] Value type: {type(value)}, size: {len(str(value)) if value else 0}")
         except Exception as e:
             logger.warning(f"Cache set error for key {key}: {e}")
     
