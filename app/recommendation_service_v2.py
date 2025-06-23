@@ -98,21 +98,9 @@ class RecommendationServiceV2:
             
         except Exception as e:
             logger.error(f"Error getting popular items: {e}")
-            # Return empty result on error
             computation_time = (time.time() - start_time) * 1000
-            return RecommendationResponse(
-                items=[],
-                pagination=PaginationInfo(
-                    page=request.pagination.page,
-                    limit=request.pagination.limit,
-                    total_pages=0,
-                    has_next=False,
-                    has_previous=False
-                ),
-                computation_time_ms=computation_time,
-                algorithm_used="popular_error",
-                cache_hit=False
-            )
+            logger.error(f"Popular items request failed in {computation_time:.2f}ms")
+            raise
     
     @staticmethod
     async def get_personalized_recommendations(request: PersonalizedRequest) -> RecommendationResponse:
@@ -206,21 +194,9 @@ class RecommendationServiceV2:
             
         except Exception as e:
             logger.error(f"Error getting personalized recommendations for user {request.user_id}: {e}")
-            # Return empty result on error
             computation_time = (time.time() - start_time) * 1000
-            return RecommendationResponse(
-                items=[],
-                pagination=PaginationInfo(
-                    page=request.pagination.page,
-                    limit=request.pagination.limit,
-                    total_pages=0,
-                    has_next=False,
-                    has_previous=False
-                ),
-                computation_time_ms=computation_time,
-                algorithm_used="personalized_error",
-                cache_hit=False
-            )
+            logger.error(f"Personalized recommendations request failed in {computation_time:.2f}ms")
+            raise
     
     @staticmethod
     def _build_popular_cache_key(request: PopularItemsRequest) -> str:
@@ -482,7 +458,7 @@ class RecommendationServiceV2:
         
         try:
             filtered_results = await db.execute_main_query(filter_query, *filter_params)
-            return [row['id'] for row in filtered_results]
+            return [str(row['id']) for row in filtered_results]  # Convert UUID to string
         except Exception as e:
             logger.error(f"Error applying filters: {e}")
             return item_ids  # Return unfiltered if filter fails
