@@ -442,7 +442,7 @@ class RecommendationServiceV2:
             return item_ids
         
         # Build filter conditions - cast UUIDs properly
-        filter_conditions = ["hp.id::text = ANY($1::varchar[])", "hp.geo_id = $2", "hp.status = 'in_stock'"]
+        filter_conditions = ["hp.id::text = ANY($1::text[])", "hp.geo_id = $2", "hp.status = 'in_stock'"]
         filter_params = [item_ids, geo_id]
         param_count = 2
         
@@ -477,7 +477,7 @@ class RecommendationServiceV2:
             SELECT id
             FROM handpicked_presents hp
             WHERE {' AND '.join(filter_conditions)}
-            ORDER BY array_position($1::varchar[], hp.id::text)
+            ORDER BY array_position($1::text[], hp.id::text)
         """
         
         try:
