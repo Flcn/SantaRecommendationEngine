@@ -70,6 +70,11 @@ class RecommendationServiceV2:
             end_idx = start_idx + request.pagination.limit
             page_items = filtered_items[start_idx:end_idx]
             
+            logger.info(f"[DEBUG] Pagination: page={request.pagination.page}, limit={request.pagination.limit}, offset={start_idx}")
+            logger.info(f"[DEBUG] Slicing: filtered_items[{start_idx}:{end_idx}] = {len(page_items)} items")
+            if page_items:
+                logger.info(f"[DEBUG] First few items: {page_items[:3]}")
+            
             # Build pagination info
             pagination_info = PaginationInfo(
                 page=request.pagination.page,
