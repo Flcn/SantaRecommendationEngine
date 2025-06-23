@@ -48,7 +48,7 @@ class PopularItemsRequest(BaseModel):
 
 class PersonalizedRequest(BaseModel):
     """Request model for personalized recommendations API"""
-    user_id: int = Field(..., description="User ID for personalized recommendations")
+    user_id: str = Field(..., description="User ID for personalized recommendations (UUID string)")
     geo_id: int = Field(..., description="Geographic region ID")
     filters: Optional[Filters] = None
     pagination: Pagination = Pagination()
