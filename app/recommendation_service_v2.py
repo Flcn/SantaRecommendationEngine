@@ -265,7 +265,7 @@ class RecommendationServiceV2:
         return ":".join(key_parts)
     
     @staticmethod
-    async def _query_popular_items(request: PopularItemsRequest) -> List[int]:
+    async def _query_popular_items(request: PopularItemsRequest) -> List[str]:
         """Query popular items from recommendations database"""
         query = """
             SELECT item_id
@@ -289,7 +289,7 @@ class RecommendationServiceV2:
         return [row['item_id'] for row in results]
     
     @staticmethod
-    async def _get_user_likes(user_id: int) -> List[int]:
+    async def _get_user_likes(user_id: str) -> List[str]:
         """Get user's liked items from main database"""
         query = """
             SELECT handpicked_present_id
@@ -301,7 +301,7 @@ class RecommendationServiceV2:
         return [row['handpicked_present_id'] for row in results]
     
     @staticmethod
-    async def _get_user_profile(user_id: int) -> Optional[UserProfile]:
+    async def _get_user_profile(user_id: str) -> Optional[UserProfile]:
         """Get user profile from recommendations database"""
         query = """
             SELECT user_id, preferred_categories, preferred_platforms, 
@@ -329,10 +329,10 @@ class RecommendationServiceV2:
     
     @staticmethod
     async def _get_collaborative_recommendations(
-        user_id: int, 
+        user_id: str, 
         geo_id: int, 
-        user_likes: List[int]
-    ) -> List[int]:
+        user_likes: List[str]
+    ) -> List[str]:
         """Get collaborative filtering recommendations"""
         # Get similar users from recommendations DB
         similar_users_query = """
@@ -380,11 +380,11 @@ class RecommendationServiceV2:
     
     @staticmethod
     async def _get_content_based_recommendations(
-        user_id: int,
+        user_id: str,
         geo_id: int, 
-        user_likes: List[int],
+        user_likes: List[str],
         user_profile: UserProfile
-    ) -> List[int]:
+    ) -> List[str]:
         """Get content-based recommendations using user profile"""
         # Simple content-based: get popular items in user's preferred categories
         preferred_categories = list(user_profile.preferred_categories.keys())[:3]  # Top 3 categories
@@ -408,7 +408,7 @@ class RecommendationServiceV2:
         return [row['item_id'] for row in results]
     
     @staticmethod
-    async def _get_fallback_popular_items(geo_id: int, user_likes: List[int]) -> List[int]:
+    async def _get_fallback_popular_items(geo_id: int, user_likes: List[str]) -> List[str]:
         """Get fallback popular items"""
         query = """
             SELECT item_id
@@ -426,10 +426,10 @@ class RecommendationServiceV2:
     
     @staticmethod
     async def _apply_filters(
-        item_ids: List[int], 
+        item_ids: List[str], 
         filters: Optional[Any], 
         geo_id: int
-    ) -> List[int]:
+    ) -> List[str]:
         """Apply real-time filters to item list using main database"""
         if not item_ids:
             return []
@@ -438,7 +438,7 @@ class RecommendationServiceV2:
             return item_ids
         
         # Build filter conditions
-        filter_conditions = ["hp.id = ANY($1::int[])", "hp.geo_id = $2", "hp.status = 'in_stock'"]
+        filter_conditions = ["hp.id = ANY($1::varchar[])", "hp.geo_id = $2", "hp.status = 'in_stock'"]
         filter_params = [item_ids, geo_id]
         param_count = 2
         
@@ -473,7 +473,7 @@ class RecommendationServiceV2:
             SELECT id
             FROM handpicked_presents hp
             WHERE {' AND '.join(filter_conditions)}
-            ORDER BY array_position($1::int[], hp.id)
+            ORDER BY array_position($1::varchar[], hp.id)
         """
         
         try:

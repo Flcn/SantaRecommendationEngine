@@ -65,7 +65,7 @@ class PaginationInfo(BaseModel):
 
 class RecommendationResponse(BaseModel):
     """Response model for both popular and personalized recommendations"""
-    items: List[int] = Field(..., description="List of recommended item IDs")
+    items: List[str] = Field(..., description="List of recommended item IDs (UUID strings)")
     pagination: PaginationInfo
     computation_time_ms: float = Field(..., description="Time taken to compute recommendations")
     algorithm_used: str = Field(..., description="Algorithm used: 'popular', 'personalized', 'hybrid'")
