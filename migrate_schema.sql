@@ -1,12 +1,12 @@
--- MySanta Recommendations Database Schema (Minimal)
--- This is a separate database for pre-computed recommendation data
--- Updated to support UUID user_ids from Rails
+-- Migration script to update recommendations database schema for UUID support
+-- Run this to fix the INTEGER vs VARCHAR(36) mismatch
 
--- Drop existing tables if they exist (for clean recreation)
+-- Drop existing tables (they have wrong column types)
 DROP TABLE IF EXISTS user_similarities CASCADE;
 DROP TABLE IF EXISTS user_profiles CASCADE;
 DROP TABLE IF EXISTS popular_items CASCADE;
 
+-- Recreate tables with correct UUID support
 -- Popular items by demographics (refreshed every 15 minutes)
 CREATE TABLE popular_items (
     id SERIAL PRIMARY KEY,
@@ -14,7 +14,7 @@ CREATE TABLE popular_items (
     gender VARCHAR(10),
     age_group VARCHAR(20),
     category VARCHAR(50),
-    item_id VARCHAR(36) NOT NULL,  -- UUID as string
+    item_id VARCHAR(36) NOT NULL,
     popularity_score DECIMAL(10,4) NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -27,8 +27,8 @@ CREATE INDEX idx_popular_items_updated ON popular_items(updated_at);
 
 -- User similarity cache (refreshed hourly for active users)  
 CREATE TABLE user_similarities (
-    user_id VARCHAR(36) NOT NULL,  -- UUID as string
-    similar_user_id VARCHAR(36) NOT NULL,  -- UUID as string
+    user_id VARCHAR(36) NOT NULL,
+    similar_user_id VARCHAR(36) NOT NULL,
     similarity_score DECIMAL(6,4) NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(user_id, similar_user_id)
@@ -40,7 +40,7 @@ CREATE INDEX idx_user_similarities_updated ON user_similarities(updated_at);
 
 -- User profiles cache (refreshed when user gets new likes)
 CREATE TABLE user_profiles (
-    user_id VARCHAR(36) PRIMARY KEY,  -- UUID as string
+    user_id VARCHAR(36) PRIMARY KEY,
     preferred_categories JSONB,
     preferred_platforms JSONB,
     avg_price DECIMAL(10,2),

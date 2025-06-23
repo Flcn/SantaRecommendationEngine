@@ -3,6 +3,7 @@ Background jobs for data refresh and cache maintenance
 """
 
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime, timedelta
@@ -148,11 +149,11 @@ class BackgroundJobs:
                 return
             
             # Then check which ones need profile updates from recommendations DB
-            user_ids = [user['user_id'] for user in recent_users]
+            user_ids = [str(user['user_id']) for user in recent_users]
             existing_profiles_query = """
                 SELECT user_id, updated_at
                 FROM user_profiles 
-                WHERE user_id = ANY($1::int[])
+                WHERE user_id = ANY($1::varchar[])
             """
             
             existing_profiles = await db.execute_recommendations_query(existing_profiles_query, user_ids)
@@ -225,6 +226,16 @@ class BackgroundJobs:
                 price = interaction.get('price', 0)
                 platform = interaction.get('platform', '')
                 
+                # Parse categories if it's a JSON string
+                if isinstance(categories, str):
+                    try:
+                        import json
+                        categories = json.loads(categories)
+                    except (json.JSONDecodeError, TypeError):
+                        categories = {}
+                elif categories is None:
+                    categories = {}
+                
                 # Category preferences
                 for cat_type, cat_value in categories.items():
                     if cat_value and cat_type != 'unknown':
@@ -281,9 +292,9 @@ class BackgroundJobs:
             
             await db.execute_recommendations_command(
                 upsert_query,
-                user_id,
-                profile['category_preferences'],
-                profile['platform_preferences'],
+                str(user_id),  # Convert UUID to string
+                json.dumps(profile['category_preferences']),  # Serialize to JSON string
+                json.dumps(profile['platform_preferences']),  # Serialize to JSON string
                 profile['price_range']['avg'],
                 profile['price_range']['min'] if profile['price_range']['min'] != float('inf') else None,
                 profile['price_range']['max'],
@@ -324,7 +335,7 @@ class BackgroundJobs:
             # Process users in batches
             for i in range(0, len(active_users), 50):
                 batch = active_users[i:i+50]
-                await BackgroundJobs._update_user_similarities_batch([u['user_id'] for u in batch])
+                await BackgroundJobs._update_user_similarities_batch([str(u['user_id']) for u in batch])
             
             computation_time = (time.time() - start_time) * 1000
             logger.info(f"User similarities updated successfully in {computation_time:.2f}ms")
@@ -334,15 +345,15 @@ class BackgroundJobs:
             raise
     
     @staticmethod
-    async def _update_user_similarities_batch(user_ids: List[int]):
+    async def _update_user_similarities_batch(user_ids: List[str]):
         """Update similarities for a batch of users"""
         try:
             # Get user similarity data from main DB
             similarity_query = """
                 WITH user_items AS (
-                    SELECT user_id, array_agg(handpicked_present_id) as liked_items
+                    SELECT user_id::text, array_agg(handpicked_present_id) as liked_items
                     FROM handpicked_likes
-                    WHERE user_id = ANY($1::int[])
+                    WHERE user_id::text = ANY($1::varchar[])
                     GROUP BY user_id
                 ),
                 similarities AS (
@@ -369,7 +380,7 @@ class BackgroundJobs:
                 return
             
             # Batch insert similarities to recommendations DB
-            await db.execute_recommendations_command("DELETE FROM user_similarities WHERE user_id = ANY($1::int[])", user_ids)
+            await db.execute_recommendations_command("DELETE FROM user_similarities WHERE user_id = ANY($1::varchar[])", user_ids)
             
             if similarities:
                 # Build batch insert query
