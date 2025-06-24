@@ -4,9 +4,11 @@ FastAPI application for MySanta recommendation service
 
 import logging
 import asyncio
+import secrets
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.config import settings
 from app.database import db
 from app.models import (
@@ -23,6 +25,22 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Setup HTTP Basic Auth
+security = HTTPBasic()
+
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify HTTP Basic auth credentials"""
+    correct_username = secrets.compare_digest(credentials.username, settings.basic_auth_username)
+    correct_password = secrets.compare_digest(credentials.password, settings.basic_auth_password)
+    
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 
 @asynccontextmanager
@@ -78,7 +96,7 @@ async def health_check():
 
 
 @app.post("/popular", response_model=RecommendationResponse)
-async def get_popular_items(request: PopularItemsRequest):
+async def get_popular_items(request: PopularItemsRequest, username: str = Depends(verify_credentials)):
     """
     Get popular items based on user demographics
     
@@ -111,7 +129,7 @@ async def get_popular_items(request: PopularItemsRequest):
 
 
 @app.post("/personalized", response_model=RecommendationResponse)
-async def get_personalized_recommendations(request: PersonalizedRequest):
+async def get_personalized_recommendations(request: PersonalizedRequest, username: str = Depends(verify_credentials)):
     """
     Get personalized recommendations based on user's likes
     
@@ -144,7 +162,7 @@ async def get_personalized_recommendations(request: PersonalizedRequest):
 
 
 @app.get("/user-profile/{user_id}")
-async def get_user_profile(user_id: int):
+async def get_user_profile(user_id: int, username: str = Depends(verify_credentials)):
     """
     Get user preference profile from recommendations database
     
@@ -194,7 +212,7 @@ async def get_user_profile(user_id: int):
 
 
 @app.get("/stats")
-async def get_service_stats():
+async def get_service_stats(username: str = Depends(verify_credentials)):
     """Get service statistics and performance metrics"""
     try:
         # Get stats from main database
@@ -253,7 +271,7 @@ async def get_service_stats():
 
 
 @app.post("/admin/refresh-popular-items")
-async def manual_refresh_popular_items():
+async def manual_refresh_popular_items(username: str = Depends(verify_credentials)):
     """Manually trigger popular items refresh (admin endpoint)"""
     try:
         logger.info("Manual popular items refresh triggered")

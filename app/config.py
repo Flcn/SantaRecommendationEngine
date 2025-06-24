@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "info"
     
+    # HTTP Basic Authentication
+    basic_auth_username: str = "mysanta_service"
+    basic_auth_password: str = "change_me_in_production"
+    
     @property
     def is_development(self) -> bool:
         """Check if running in development mode"""

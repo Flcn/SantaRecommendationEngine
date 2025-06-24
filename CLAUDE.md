@@ -141,6 +141,10 @@ CACHE_TTL_USER_PROFILE=14400    # 4 hours
 # Service settings
 DEBUG=false
 LOG_LEVEL=info
+
+# HTTP Basic Authentication
+BASIC_AUTH_USERNAME=mysanta_service
+BASIC_AUTH_PASSWORD=your_secure_password_here
 ```
 
 ### Key Configuration Files
