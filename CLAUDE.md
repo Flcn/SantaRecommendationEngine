@@ -73,7 +73,7 @@ MAIN_DATABASE_URL=postgresql://... uvicorn app.main:app --reload
 
 ### Docker Development
 ```bash
-# Build and run with Docker Compose
+# Build and run with Docker Compose (hot reload enabled)
 docker-compose up --build
 
 # Run specific service
@@ -84,7 +84,12 @@ docker-compose logs -f recommendation_engine
 
 # Shell access
 docker-compose exec recommendation_engine bash
+
+# Restart after docker-compose.yaml changes
+docker-compose restart recommendation_engine
 ```
+
+**Note: Hot reloading is now enabled! Code changes will automatically reload the FastAPI server without needing to restart the container.**
 
 ### Testing
 ```bash

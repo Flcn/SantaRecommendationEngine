@@ -15,6 +15,11 @@ services:
       # Service settings
       - DEBUG=false
       - LOG_LEVEL=info
+      # Cache TTL settings (override any defaults)
+      - CACHE_TTL_POPULAR=900
+      - CACHE_TTL_PERSONALIZED=5
+      - CACHE_TTL_USER_PROFILE=14400
+      - CACHE_KEY_PREFIX=v3
       # Performance settings
       - MAX_SIMILAR_USERS=20
       - DEFAULT_PAGE_SIZE=20

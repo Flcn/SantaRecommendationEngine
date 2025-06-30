@@ -7,6 +7,7 @@ Clean recommendation service with two core APIs:
 import time
 import logging
 import math
+import json
 from typing import List, Dict, Any, Tuple, Optional
 from app.database import db
 from app.config import settings
@@ -209,6 +210,7 @@ class RecommendationServiceV2:
     def _build_popular_cache_key(request: PopularItemsRequest) -> str:
         """Build cache key for popular items"""
         key_parts = [
+            settings.cache_key_prefix,
             "popular",
             str(request.user_params.geo_id),
             request.user_params.gender or "any",
@@ -233,6 +235,7 @@ class RecommendationServiceV2:
     def _build_personalized_cache_key(request: PersonalizedRequest) -> str:
         """Build cache key for personalized recommendations"""
         key_parts = [
+            settings.cache_key_prefix,
             "personalized",
             str(request.user_id),
             str(request.geo_id),
@@ -281,11 +284,11 @@ class RecommendationServiceV2:
         query = """
             SELECT handpicked_present_id
             FROM handpicked_likes
-            WHERE user_id = $1
+            WHERE user_id::text = $1
         """
         
         results = await db.execute_main_query(query, user_id)
-        return [row['handpicked_present_id'] for row in results]
+        return [str(row['handpicked_present_id']) for row in results]
     
     @staticmethod
     async def _get_user_profile(user_id: str) -> Optional[UserProfile]:
@@ -301,10 +304,19 @@ class RecommendationServiceV2:
         result = await db.execute_recommendations_query_one(query, user_id)
         
         if result:
+            # Parse JSON strings to dictionaries
+            preferred_categories = result['preferred_categories'] or '{}'
+            preferred_platforms = result['preferred_platforms'] or '{}'
+            
+            if isinstance(preferred_categories, str):
+                preferred_categories = json.loads(preferred_categories)
+            if isinstance(preferred_platforms, str):
+                preferred_platforms = json.loads(preferred_platforms)
+            
             return UserProfile(
                 user_id=result['user_id'],
-                preferred_categories=result['preferred_categories'] or {},
-                preferred_platforms=result['preferred_platforms'] or {},
+                preferred_categories=preferred_categories,
+                preferred_platforms=preferred_platforms,
                 avg_price=result['avg_price'],
                 price_range_min=result['price_range_min'],
                 price_range_max=result['price_range_max'],
@@ -340,17 +352,18 @@ class RecommendationServiceV2:
         similar_user_ids = [row['similar_user_id'] for row in similar_users]
         
         # Get items liked by similar users from main DB
+        
         recommendations_query = """
             SELECT 
-                hl.handpicked_present_id as item_id,
+                hl.handpicked_present_id::text as item_id,
                 COUNT(*) as like_count
             FROM handpicked_likes hl
             JOIN handpicked_presents hp ON hl.handpicked_present_id = hp.id
-            WHERE hl.user_id = ANY($1::int[])
+            WHERE hl.user_id::text = ANY($1::text[])
               AND hp.geo_id = $2
               AND hp.status = 'in_stock'
               AND hp.user_id IS NULL
-              AND ($3::int[] IS NULL OR hl.handpicked_present_id != ALL($3::int[]))
+              AND ($3::text[] IS NULL OR hl.handpicked_present_id::text != ALL($3::text[]))
             GROUP BY hl.handpicked_present_id
             ORDER BY like_count DESC
             LIMIT 100

@@ -75,13 +75,13 @@ class RecommendationResponse(BaseModel):
 
 class SimilarUsersRequest(BaseModel):
     """Request for finding similar users"""
-    user_id: int
+    user_id: str = Field(..., description="User ID (UUID string)")
     limit: int = Field(20, ge=1, le=100)
 
 
 class UserProfile(BaseModel):
     """User profile for recommendations"""
-    user_id: int
+    user_id: str = Field(..., description="User ID (UUID string)")
     preferred_categories: Dict[str, float] = Field(default_factory=dict)
     preferred_platforms: Dict[str, float] = Field(default_factory=dict)
     avg_price: Optional[float] = None

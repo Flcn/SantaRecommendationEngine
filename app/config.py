@@ -45,8 +45,11 @@ class Settings(BaseSettings):
     
     # Cache TTL settings (in seconds)
     cache_ttl_popular: int = 900       # 15 minutes  
-    cache_ttl_personalized: int = 7200  # 2 hours
+    cache_ttl_personalized: int = 5     # 5 seconds (for testing)
     cache_ttl_user_profile: int = 14400  # 4 hours
+    
+    # Cache key prefix (change to invalidate all caches)
+    cache_key_prefix: str = "v3"
     
     # Performance limits
     max_similar_users: int = 20

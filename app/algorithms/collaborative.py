@@ -48,7 +48,7 @@ class CollaborativeFilter:
             similarity_query = """
                 SELECT user_id, COUNT(*) as overlap_count
                 FROM handpicked_likes 
-                WHERE handpicked_present_id = ANY($1::int[])
+                WHERE handpicked_present_id = ANY($1::uuid[])
                   AND user_id != $2
                 GROUP BY user_id 
                 HAVING COUNT(*) >= $3
@@ -109,11 +109,11 @@ class CollaborativeFilter:
                     COUNT(DISTINCT hl.user_id) as user_count
                 FROM handpicked_likes hl
                 JOIN handpicked_presents hp ON hl.handpicked_present_id = hp.id
-                WHERE hl.user_id = ANY($1::int[])
+                WHERE hl.user_id = ANY($1::uuid[])
                   AND hp.geo_id = $2
                   AND hp.status = 'in_stock'
                   AND hp.user_id IS NULL
-                  AND ($3::int[] IS NULL OR hl.handpicked_present_id != ALL($3::int[]))
+                  AND ($3::uuid[] IS NULL OR hl.handpicked_present_id != ALL($3::uuid[]))
                 GROUP BY hl.handpicked_present_id
                 ORDER BY like_count DESC, user_count DESC
                 LIMIT $4
