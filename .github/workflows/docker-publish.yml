@@ -41,9 +41,6 @@ jobs:
         # Remove 'v' prefix from version tags
         [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
         
-        # Convert master/main to latest
-        [ "$VERSION" == "master" ] && VERSION=latest
-        [ "$VERSION" == "main" ] && VERSION=latest
         
         echo "VERSION=$VERSION" >> $GITHUB_ENV
 
@@ -87,11 +84,6 @@ jobs:
       run: |
         docker push ${{ env.REGISTRY }}/${{ secrets.YANDEX_CONTAINER_ID }}/$IMAGE_NAME:$VERSION
 
-    - name: Tag and push latest (for master/main)
-      if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
-      run: |
-        docker tag $IMAGE_NAME:$VERSION ${{ env.REGISTRY }}/${{ secrets.YANDEX_CONTAINER_ID }}/$IMAGE_NAME:latest
-        docker push ${{ env.REGISTRY }}/${{ secrets.YANDEX_CONTAINER_ID }}/$IMAGE_NAME:latest
 
     - name: Clean up
       if: always()
