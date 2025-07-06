@@ -361,10 +361,10 @@ class FullSyncManager:
         try:
             # Get top 10k most active users for similarity computation
             all_users_query = """
-                SELECT DISTINCT user_id
+                SELECT user_id, COUNT(*) as like_count
                 FROM handpicked_likes
                 GROUP BY user_id
-                ORDER BY COUNT(*) DESC
+                ORDER BY like_count DESC
                 LIMIT 10000
             """
             
