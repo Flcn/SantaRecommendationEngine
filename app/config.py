@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     log_level: str = "info"
     
     # HTTP Basic Authentication
-    basic_auth_username: str = "mysanta_service"
-    basic_auth_password: str = "change_me_in_production"
+    basic_auth_username: str = os.getenv("BASIC_AUTH_USERNAME", "mysanta_service")
+    basic_auth_password: str = os.getenv("BASIC_AUTH_PASSWORD", "change_me_in_production")
     
     @property
     def is_development(self) -> bool:
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     user_profile_cache_hours: int = 4
     
     # Query performance limits
-    max_query_time: float = 0.5  # 500ms max per query
+    max_query_time: float = 10.0  # 10 seconds max per query (for full sync operations)
     
     class Config:
         env_file = ".env"
