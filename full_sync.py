@@ -20,6 +20,7 @@ import asyncio
 import logging
 import time
 import json
+import traceback
 from datetime import datetime
 from typing import Dict, List, Any
 from app.config import settings
@@ -69,7 +70,9 @@ class FullSyncManager:
             logger.info("Recommendation engine is ready for production!")
             
         except Exception as e:
-            logger.error(f"❌ FULL SYNC FAILED: {e}")
+            logger.error(f"❌ FULL SYNC FAILED: {type(e).__name__}: {e}")
+            logger.error("Full traceback:")
+            logger.error(traceback.format_exc())
             raise
         finally:
             await db.close()
@@ -184,7 +187,9 @@ class FullSyncManager:
             logger.info(f"✅ Step 2 completed in {computation_time:.2f}ms")
             
         except Exception as e:
-            logger.error(f"❌ Step 2 failed: {e}")
+            logger.error(f"❌ Step 2 failed: {type(e).__name__}: {e}")
+            logger.error("Full traceback:")
+            logger.error(traceback.format_exc())
             raise
     
     @staticmethod

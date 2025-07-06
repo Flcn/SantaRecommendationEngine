@@ -18,7 +18,7 @@ This file provides guidance to Claude Code when working with the MySanta Recomme
 ### Database Architecture
 ```
 Main Database (READ-ONLY)
-├── handpicked_presents     # Original gift items
+├── handpicked_presents     # Gift items (ONLY user_id IS NULL are recommendable)
 ├── handpicked_likes        # User interactions
 └── handpicked_present_clicks  # Click tracking
 
@@ -30,6 +30,15 @@ Recommendations Database (READ/WRITE)
 Redis Database 1
 └── Recommendation caching layer
 ```
+
+**IMPORTANT: Recommendable Items Policy**
+- **Public Presents**: `handpicked_presents` where `user_id IS NULL` (~16k items)
+  - These are curated public gift items that can be recommended to users
+  - All recommendation algorithms MUST filter `WHERE user_id IS NULL`
+- **User-Added Presents**: `handpicked_presents` where `user_id IS NOT NULL` (~436k items) 
+  - These are presents added by individual users for their own use
+  - These should NEVER be recommended to other users
+  - They are excluded from all recommendation algorithms
 
 ## Two Core APIs
 
@@ -55,6 +64,37 @@ POST /personalized
 ## Development Commands
 
 **IMPORTANT: Do not modify docker-compose.yaml or restart Docker containers unless explicitly requested by the user.**
+
+### Code Deployment Workflow
+
+**For Kubernetes Staging/Production deployments:**
+
+1. **Make code changes** locally
+2. **Commit and push to staging branch**:
+   ```bash
+   git add .
+   git commit -m "Description of changes"
+   git push origin staging
+   ```
+3. **Wait for CI/CD** to build and push image (`recommendation_engine:staging`)
+4. **Deploy to staging** namespace:
+   ```bash
+   kubectl rollout restart deployment recommendation-engine-staging -n staging
+   ```
+5. **Test staging deployment**
+6. **For production**: Push to `master` or `main` branch:
+   ```bash
+   git checkout main  # or master
+   git merge staging
+   git push origin main  # or master
+   ```
+7. **Wait for CI/CD** to build production image (`recommendation_engine:main`)
+8. **Deploy to production**:
+   ```bash
+   kubectl rollout restart deployment recommendation-engine-production -n default
+   ```
+
+**DO NOT** manually restart pods without going through CI/CD pipeline for code changes.
 
 ### Local Development
 ```bash
@@ -87,6 +127,12 @@ docker-compose exec recommendation_engine bash
 
 # Restart after docker-compose.yaml changes
 docker-compose restart recommendation_engine
+
+# Test new demographics sync API (Phase 1)
+curl -u "mysanta_service:mysanta_rec_dev_2024_secure!" -X PUT \
+  "http://localhost:8001/user-profile/USER_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"gender": "male", "age_group": "25-34", "locale": "ru", "geo_id": 213}'
 ```
 
 **Note: Hot reloading is now enabled! Code changes will automatically reload the FastAPI server without needing to restart the container.**
@@ -173,6 +219,9 @@ BASIC_AUTH_PASSWORD=your_secure_password_here
 - `POST /admin/refresh-popular-items` - Manual popular items refresh
 - `POST /admin/update-user-profiles` - Manual user profiles update
 
+### User Profile Sync API (NEW - Phase 1)
+- `PUT /user-profile/{user_id}` - Sync user demographics from Rails for immediate targeting
+
 ## Request/Response Format
 
 ### Popular Items Request
@@ -209,6 +258,16 @@ BASIC_AUTH_PASSWORD=your_secure_password_here
     "page": 1,
     "limit": 20
   }
+}
+```
+
+### User Demographics Sync Request (NEW - Phase 1)
+```json
+{
+  "gender": "male",
+  "age_group": "25-34",
+  "locale": "ru", 
+  "geo_id": 213
 }
 ```
 
@@ -525,5 +584,58 @@ recommendation_engine:
 - **A/B Testing**: Algorithm selection can be feature-flagged
 - **Real-time Learning**: User similarity computation can be incremental
 - **Hybrid Approaches**: Content + collaborative filtering combination
+
+## Phase 1: Real-time Demographics Integration (NEW - 2025-07-04)
+
+### Overview
+Phase 1 adds **immediate demographic targeting** for new users by syncing user profile data from Rails to the recommendation engine in real-time.
+
+### Key Features
+- **Instant Profile Sync**: Rails automatically syncs user demographics (gender, birthday, locale) on profile changes
+- **Demographic Targeting**: New users get popular items targeted to their demographics instead of generic fallback
+- **Intelligent Fallback**: Exact demographics → gender only → age only → generic popular items
+- **Performance**: 4-hour cache TTL, non-blocking failures, ~16ms response times
+- **Graceful Degradation**: Service failures don't affect user experience
+
+### Implementation Details
+
+#### Rails Integration
+- **User Model Callbacks**: `after_update :sync_to_recommendation_engine, if: :recommendation_relevant_changes?`
+- **Background Job**: `RecommendationSyncJob` handles async HTTP requests to recommendation engine
+- **Error Handling**: Service downtime logged but doesn't block user flows
+
+#### Recommendation Engine
+- **New API Endpoint**: `PUT /user-profile/{user_id}` accepts demographic data
+- **UserDemographicsUpdate Model**: Pydantic validation with gender normalization (male→m, female→f)
+- **Enhanced Fallback Logic**: `_get_fallback_popular_items()` tries demographic-specific queries first
+- **Redis Caching**: User demographics cached for 4 hours for fast lookups
+
+#### Demographics Targeting Flow
+1. **User updates profile** in Rails (gender/birthday/locale change)
+2. **Model callback triggers** → `RecommendationSyncJob.perform_later(user.id)`
+3. **Background job executes** → `RecommendationClient.sync_user_profile(...)`
+4. **HTTP PUT request** → `/user-profile/{user_id}` with demographics
+5. **Recommendation engine** caches demographics in Redis
+6. **Next recommendation request** uses cached demographics for targeting
+
+#### Fallback Chain Example
+For a 25-34 male user:
+1. Try: `gender=m AND age_group=25-34 AND category=any`
+2. Try: `gender=m AND age_group=any AND category=any`
+3. Try: `gender=any AND age_group=25-34 AND category=any`
+4. Fallback: `gender=any AND age_group=any AND category=any`
+
+### Benefits
+- **Immediate Personalization**: New users get relevant recommendations from first visit
+- **Better Engagement**: Demographic-targeted items increase interaction likelihood
+- **Improved Conversion**: More relevant initial recommendations drive user activation
+- **Scalable**: Works with existing infrastructure, minimal performance impact
+
+### Testing
+- ✅ API endpoint working with HTTP Basic Auth
+- ✅ Demographics correctly cached in Redis
+- ✅ Fallback chain working (demographic → generic)
+- ✅ Non-blocking failures
+- ✅ Performance: 16ms response times
 
 This recommendation engine represents a modern, scalable approach to personalized recommendations in the MySanta ecosystem, replacing the legacy Flask service with improved performance, reliability, and developer experience.
