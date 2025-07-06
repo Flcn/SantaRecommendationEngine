@@ -206,7 +206,6 @@ class FullSyncManager:
                 GROUP BY user_id
                 HAVING COUNT(*) >= 1
                 ORDER BY total_likes DESC
-                LIMIT 10000
             """
             
             all_users = await db.execute_main_query(all_users_query)
@@ -360,12 +359,13 @@ class FullSyncManager:
         start_time = time.time()
         
         try:
-            # Get ALL users with interactions (no time constraint)
+            # Get top 10k most active users for similarity computation
             all_users_query = """
-                SELECT DISTINCT user_id
+                SELECT user_id, COUNT(*) as like_count
                 FROM handpicked_likes
-                ORDER BY user_id
-                LIMIT 5000
+                GROUP BY user_id
+                ORDER BY like_count DESC
+                LIMIT 10000
             """
             
             all_users = await db.execute_main_query(all_users_query)
@@ -375,9 +375,8 @@ class FullSyncManager:
                 logger.info("   ℹ️ No users found for similarity computation")
                 return
             
-            # Process users in batches (smaller batches due to CROSS JOIN complexity)
-            batch_size = 10  # Reduced from 100 to avoid timeout with 10x10=100 combinations
-            total_similarities_created = 0
+            # Process users in batches (increased batch size for better performance)
+            batch_size = 20  # Increased to 20 users per batch for better throughput
             for i in range(0, len(all_users), batch_size):
                 batch = all_users[i:i+batch_size]
                 user_ids = [str(u['user_id']) for u in batch]
@@ -431,12 +430,12 @@ class FullSyncManager:
                     FROM user_items u1
                     CROSS JOIN user_items u2
                     WHERE u1.user_id != u2.user_id
-                      AND array_length(array(SELECT unnest(u1.liked_items) INTERSECT SELECT unnest(u2.liked_items)), 1) >= 2
+                      AND array_length(array(SELECT unnest(u1.liked_items) INTERSECT SELECT unnest(u2.liked_items)), 1) >= 1
                 )
                 SELECT 
                     user_id,
                     similar_user_id,
-                    overlap::float / GREATEST(20, overlap) as similarity_score
+                    overlap::float / (overlap + 10) as similarity_score
                 FROM similarities
                 ORDER BY user_id, similarity_score DESC
             """
