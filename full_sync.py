@@ -377,7 +377,6 @@ class FullSyncManager:
             
             # Process users in batches (increased batch size for better performance)
             batch_size = 20  # Increased to 20 users per batch for better throughput
-            total_similarities_created = 0
             for i in range(0, len(all_users), batch_size):
                 batch = all_users[i:i+batch_size]
                 user_ids = [str(u['user_id']) for u in batch]
