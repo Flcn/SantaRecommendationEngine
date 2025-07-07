@@ -16,11 +16,12 @@ class TestPopularItems:
         """Test popular items with cache hit"""
         # Setup cache hit
         cached_data = {
-            'items': [101, 102, 103],
+            'items': ["101", "102", "103"],
             'pagination': {
                 'page': 1,
                 'limit': 20,
                 'total_pages': 1,
+                'total_count': 3,
                 'has_next': False,
                 'has_previous': False
             }
@@ -32,7 +33,7 @@ class TestPopularItems:
         
         # Assertions
         assert isinstance(response, RecommendationResponse)
-        assert response.items == [101, 102, 103]
+        assert response.items == ["101", "102", "103"]
         assert response.cache_hit is True
         assert response.algorithm_used == "popular"
         assert response.computation_time_ms < 100  # Should be very fast
@@ -72,14 +73,14 @@ class TestPopularItems:
         mock_db.execute_recommendations_query.return_value = sample_popular_items
         
         # Mock filtered results (fewer items after price filter)
-        filtered_items = [{"id": 101}, {"id": 103}]
+        filtered_items = [{"id": "101"}, {"id": "103"}]
         mock_db.execute_main_query.return_value = filtered_items
         
         with patch('app.recommendation_service_v2.db', mock_db):
             response = await RecommendationServiceV2.get_popular_items(sample_popular_request)
         
         # Assertions
-        assert response.items == [101, 103]
+        assert response.items == ["101", "103"]
         assert len(response.items) == 2
         
         # Verify filter query was called with price parameters
@@ -92,10 +93,10 @@ class TestPopularItems:
     async def test_get_popular_items_pagination(self, mock_db, sample_popular_request):
         """Test popular items pagination"""
         # Setup large dataset
-        large_dataset = [{"item_id": i} for i in range(1, 101)]  # 100 items
+        large_dataset = [{"item_id": str(i)} for i in range(1, 101)]  # 100 items
         mock_db.cache_get.return_value = None
         mock_db.execute_recommendations_query.return_value = large_dataset
-        mock_db.execute_main_query.return_value = [{"id": i} for i in range(1, 101)]
+        mock_db.execute_main_query.return_value = [{"id": str(i)} for i in range(1, 101)]
         
         # Test page 1
         sample_popular_request.pagination.page = 1
@@ -106,7 +107,7 @@ class TestPopularItems:
         
         # Assertions for pagination
         assert len(response.items) == 20
-        assert response.items == list(range(1, 21))  # First 20 items
+        assert response.items == [str(i) for i in range(1, 21)]  # First 20 items
         assert response.pagination.page == 1
         assert response.pagination.has_next is True
         assert response.pagination.has_previous is False

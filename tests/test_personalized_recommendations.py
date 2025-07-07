@@ -230,7 +230,7 @@ class TestPersonalizedRecommendations:
         from app.models import PersonalizedRequest, Pagination
         
         request = PersonalizedRequest(
-            user_id=123,
+            user_id="123",
             geo_id=213,
             pagination=Pagination(page=1, limit=10)
         )
@@ -245,20 +245,20 @@ class TestPersonalizedRecommendations:
         mock_db.execute_main_query.return_value = sample_user_likes
         
         with patch('app.recommendation_service_v2.db', mock_db):
-            result = await RecommendationServiceV2._get_user_likes(123)
+            result = await RecommendationServiceV2._get_user_likes("123")
         
-        assert result == [201, 202, 203]
+        assert result == ["201", "202", "203"]
         
         # Verify query parameters
         call_args = mock_db.execute_main_query.call_args
         assert "handpicked_present_id" in call_args[0][0]
-        assert call_args[0][1] == 123  # user_id
+        assert call_args[0][1] == "123"  # user_id
     
     @pytest.mark.asyncio
     async def test_get_user_profile(self, mock_db):
         """Test _get_user_profile method"""
         profile_data = {
-            'user_id': 123,
+            'user_id': "123",
             'preferred_categories': {"category:electronics": 0.6},
             'preferred_platforms': {"ozon": 0.7},
             'avg_price': 1500.0,
@@ -270,10 +270,10 @@ class TestPersonalizedRecommendations:
         mock_db.execute_recommendations_query_one.return_value = profile_data
         
         with patch('app.recommendation_service_v2.db', mock_db):
-            result = await RecommendationServiceV2._get_user_profile(123)
+            result = await RecommendationServiceV2._get_user_profile("123")
         
         assert isinstance(result, UserProfile)
-        assert result.user_id == 123
+        assert result.user_id == "123"
         assert result.interaction_count == 5
         assert result.avg_price == 1500.0
     

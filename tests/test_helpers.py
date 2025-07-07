@@ -79,7 +79,7 @@ class TestHelperMethods:
         from app.models import PersonalizedRequest, Pagination
         
         request = PersonalizedRequest(
-            user_id=456,
+            user_id="456",
             geo_id=789,
             pagination=Pagination(page=1, limit=20)
         )
@@ -94,7 +94,7 @@ class TestHelperMethods:
         from app.models import PersonalizedRequest, Pagination, Filters
         
         request = PersonalizedRequest(
-            user_id=123,
+            user_id="123",
             geo_id=456,
             filters=Filters(
                 price_from=200,
@@ -133,16 +133,16 @@ class TestHelperMethods:
     @pytest.mark.asyncio
     async def test_apply_filters_price_range(self, mock_db):
         """Test filter application with price range"""
-        item_ids = [101, 102, 103]
+        item_ids = ["101", "102", "103"]
         filters = Filters(price_from=500, price_to=2000)
         
-        filtered_results = [{"id": 101}, {"id": 103}]
+        filtered_results = [{"id": "101"}, {"id": "103"}]
         mock_db.execute_main_query.return_value = filtered_results
         
         with patch('app.recommendation_service_v2.db', mock_db):
             result = await RecommendationServiceV2._apply_filters(item_ids, filters, 213)
         
-        assert result == [101, 103]
+        assert result == ["101", "103"]
         
         # Verify query construction
         call_args = mock_db.execute_main_query.call_args
@@ -159,20 +159,20 @@ class TestHelperMethods:
     @pytest.mark.asyncio
     async def test_apply_filters_category_filters(self, mock_db):
         """Test filter application with category filters"""
-        item_ids = [101, 102, 103]
+        item_ids = ["101", "102", "103"]
         filters = Filters(
             category="electronics",
             suitable_for="friend",
             acquaintance_level="close"
         )
         
-        filtered_results = [{"id": 102}]
+        filtered_results = [{"id": "102"}]
         mock_db.execute_main_query.return_value = filtered_results
         
         with patch('app.recommendation_service_v2.db', mock_db):
             result = await RecommendationServiceV2._apply_filters(item_ids, filters, 213)
         
-        assert result == [102]
+        assert result == ["102"]
         
         # Verify category filters in query
         call_args = mock_db.execute_main_query.call_args
@@ -189,16 +189,16 @@ class TestHelperMethods:
     @pytest.mark.asyncio
     async def test_apply_filters_platform_filter(self, mock_db):
         """Test filter application with platform filter"""
-        item_ids = [101, 102]
+        item_ids = ["101", "102"]
         filters = Filters(platform="ozon")
         
-        filtered_results = [{"id": 101}]
+        filtered_results = [{"id": "101"}]
         mock_db.execute_main_query.return_value = filtered_results
         
         with patch('app.recommendation_service_v2.db', mock_db):
             result = await RecommendationServiceV2._apply_filters(item_ids, filters, 213)
         
-        assert result == [101]
+        assert result == ["101"]
         
         # Verify platform filter in query
         call_args = mock_db.execute_main_query.call_args
@@ -225,50 +225,47 @@ class TestHelperMethods:
     @pytest.mark.asyncio
     async def test_get_fallback_popular_items(self, mock_db):
         """Test _get_fallback_popular_items method"""
-        user_likes = [201, 202]
+        user_likes = ["201", "202"]
         
-        fallback_items = [{"item_id": 301}, {"item_id": 302}]
+        fallback_items = [{"item_id": "301"}, {"item_id": "302"}]
         mock_db.execute_recommendations_query.return_value = fallback_items
         
         with patch('app.recommendation_service_v2.db', mock_db):
             result = await RecommendationServiceV2._get_fallback_popular_items(213, user_likes)
         
-        assert result == [301, 302]
+        assert result == ["301", "302"]
         
         # Verify query for fallback items
         call_args = mock_db.execute_recommendations_query.call_args
         query = call_args[0][0]
         params = call_args[0][1:]
         
-        assert "gender = 'any'" in query
-        assert "age_group = 'any'" in query
-        assert "category = 'any'" in query
+        assert "gender = $2" in query
+        assert "age_group = $3" in query
+        assert "category = $4" in query
         assert 213 in params  # geo_id
+        assert 'any' in params  # generic fallback parameters
     
     @pytest.mark.asyncio
     async def test_get_collaborative_recommendations(self, mock_db):
         """Test _get_collaborative_recommendations method"""
-        user_id = 123
+        user_id = "123"
         geo_id = 213
-        user_likes = [201, 202]
+        user_likes = ["201", "202"]
         
-        # Mock similar users
-        similar_users = [{"similar_user_id": 456}, {"similar_user_id": 789}]
-        mock_db.execute_recommendations_query.return_value = similar_users
-        
-        # Mock collaborative recommendations
-        collaborative_recs = [
-            {"item_id": 501, "like_count": 3},
-            {"item_id": 502, "like_count": 2}
+        # Mock similar items for item-based collaborative filtering
+        similar_items = [
+            {"similar_item": "501", "similarity_score": 0.8},
+            {"similar_item": "502", "similarity_score": 0.7}
         ]
-        mock_db.execute_main_query.return_value = collaborative_recs
+        mock_db.execute_recommendations_query.return_value = similar_items
         
         with patch('app.recommendation_service_v2.db', mock_db):
             result = await RecommendationServiceV2._get_collaborative_recommendations(
                 user_id, geo_id, user_likes
             )
         
-        assert result == [501, 502]
+        assert result == ["501", "502"]
         
         # Verify similar users query
         similar_users_call = mock_db.execute_recommendations_query.call_args
@@ -332,19 +329,19 @@ class TestHelperMethods:
         """Test content-based recommendations with no user preferences"""
         from app.models import UserProfile
         
-        user_id = 123
+        user_id = "123"
         geo_id = 213
-        user_likes = [201, 202]
+        user_likes = ["201", "202"]
         
         # User profile with no preferred categories
         empty_profile = UserProfile(
-            user_id=123,
+            user_id="123",
             preferred_categories={},
             interaction_count=2
         )
         
         # Should fallback to popular items
-        fallback_items = [{"item_id": 701}, {"item_id": 702}]
+        fallback_items = [{"item_id": "701"}, {"item_id": "702"}]
         mock_db.execute_recommendations_query.return_value = fallback_items
         
         with patch('app.recommendation_service_v2.db', mock_db):
@@ -352,5 +349,5 @@ class TestHelperMethods:
                 user_id, geo_id, user_likes, empty_profile
             )
         
-        assert result == [701, 702]
+        assert result == ["701", "702"]
         mock_fallback.assert_called_once_with(geo_id, user_likes)

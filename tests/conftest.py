@@ -55,7 +55,7 @@ def sample_popular_request():
 def sample_personalized_request():
     """Sample personalized request"""
     return PersonalizedRequest(
-        user_id=123,
+        user_id="123",
         geo_id=213,
         filters=Filters(
             price_from=500,
@@ -70,7 +70,7 @@ def sample_personalized_request():
 def sample_user_profile():
     """Sample user profile"""
     return UserProfile(
-        user_id=123,
+        user_id="123",
         preferred_categories={"category:electronics": 0.6, "category:books": 0.4},
         preferred_platforms={"ozon": 0.7, "wildberries": 0.3},
         avg_price=1500.0,
@@ -84,11 +84,11 @@ def sample_user_profile():
 def sample_popular_items():
     """Sample popular items data"""
     return [
-        {"item_id": 101},
-        {"item_id": 102},
-        {"item_id": 103},
-        {"item_id": 104},
-        {"item_id": 105}
+        {"item_id": "101"},
+        {"item_id": "102"},
+        {"item_id": "103"},
+        {"item_id": "104"},
+        {"item_id": "105"}
     ]
 
 
@@ -96,7 +96,7 @@ def sample_popular_items():
 def sample_user_likes():
     """Sample user likes data"""
     return [
-        {"handpicked_present_id": 201},
-        {"handpicked_present_id": 202},
-        {"handpicked_present_id": 203}
+        {"handpicked_present_id": "201"},
+        {"handpicked_present_id": "202"},
+        {"handpicked_present_id": "203"}
     ]
