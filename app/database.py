@@ -161,6 +161,14 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"Cache delete error for key {key}: {e}")
     
+    async def cache_set_async(self, key: str, value: any, ttl: int = 3600):
+        """Async version of cache_set for use in endpoints"""
+        self.cache_set(key, value, ttl)
+    
+    async def cache_delete_async(self, key: str):
+        """Async version of cache_delete for use in endpoints"""
+        self.cache_delete(key)
+    
     async def refresh_popular_items(self):
         """Refresh popular items cache table"""
         try:

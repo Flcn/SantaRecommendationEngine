@@ -155,7 +155,7 @@ class RecommendationServiceV2:
             else:
                 # Fallback to popular items for new users
                 recommended_items = await RecommendationServiceV2._get_fallback_popular_items(
-                    request.geo_id, user_likes
+                    request.geo_id, user_likes, request.user_id
                 )
                 algorithm_used = "popular_fallback"
             
@@ -223,9 +223,9 @@ class RecommendationServiceV2:
         # Add filter parts if present
         if request.filters:
             if request.filters.price_from:
-                key_parts.append(f"pf{request.filters.price_from}")
+                key_parts.append(f"pf{int(request.filters.price_from)}")
             if request.filters.price_to:
-                key_parts.append(f"pt{request.filters.price_to}")
+                key_parts.append(f"pt{int(request.filters.price_to)}")
             if request.filters.category:
                 key_parts.append(f"cat{request.filters.category}")
         
@@ -246,9 +246,9 @@ class RecommendationServiceV2:
         # Add filter parts if present
         if request.filters:
             if request.filters.price_from:
-                key_parts.append(f"pf{request.filters.price_from}")
+                key_parts.append(f"pf{int(request.filters.price_from)}")
             if request.filters.price_to:
-                key_parts.append(f"pt{request.filters.price_to}")
+                key_parts.append(f"pt{int(request.filters.price_to)}")
             if request.filters.category:
                 key_parts.append(f"cat{request.filters.category}")
         
@@ -332,7 +332,88 @@ class RecommendationServiceV2:
         geo_id: int, 
         user_likes: List[str]
     ) -> List[str]:
-        """Get collaborative filtering recommendations"""
+        """Get collaborative filtering recommendations using item-based approach"""
+        return await RecommendationServiceV2._get_collaborative_recommendations_via_items(
+            user_id, geo_id, user_likes
+        )
+    
+    @staticmethod
+    async def _get_collaborative_recommendations_via_items(
+        user_id: str, 
+        geo_id: int, 
+        user_likes: List[str]
+    ) -> List[str]:
+        """Get collaborative recommendations using item-based similarity"""
+        
+        if not user_likes:
+            return []
+        
+        # Get items similar to what user already likes
+        similar_items_query = """
+            SELECT 
+                CASE 
+                    WHEN item_a = ANY($1::text[]) THEN item_b
+                    WHEN item_b = ANY($1::text[]) THEN item_a
+                END as similar_item,
+                similarity_score
+            FROM item_similarities
+            WHERE (item_a = ANY($1::text[]) OR item_b = ANY($1::text[]))
+              AND similarity_score >= 0.2  -- Minimum similarity threshold
+            ORDER BY similarity_score DESC
+            LIMIT 200
+        """
+        
+        similar_items = await db.execute_recommendations_query(
+            similar_items_query, user_likes
+        )
+        
+        if not similar_items:
+            return []
+        
+        # Weight similar items by their similarity scores
+        item_scores = {}
+        for item in similar_items:
+            item_id = item['similar_item']
+            if item_id not in item_scores:
+                item_scores[item_id] = 0
+            item_scores[item_id] += item['similarity_score']
+        
+        # Get top weighted items
+        sorted_items = sorted(item_scores.items(), key=lambda x: x[1], reverse=True)
+        item_ids = [item[0] for item in sorted_items[:100]]
+        
+        # Filter by geo, stock, etc.
+        recommendations_query = """
+            SELECT hp.id::text as item_id,
+                   COUNT(hl.user_id) as popularity_boost
+            FROM handpicked_presents hp
+            LEFT JOIN handpicked_likes hl ON hp.id = hl.handpicked_present_id
+            WHERE hp.id::text = ANY($1::text[])
+              AND hp.geo_id = $2
+              AND hp.status = 'in_stock'
+              AND hp.user_id IS NULL  -- Only public presents
+              AND ($3::text[] IS NULL OR hp.id::text != ALL($3::text[]))
+            GROUP BY hp.id
+            ORDER BY popularity_boost DESC
+            LIMIT 100
+        """
+        
+        results = await db.execute_main_query(
+            recommendations_query,
+            item_ids,
+            geo_id,
+            user_likes if user_likes else None
+        )
+        
+        return [row['item_id'] for row in results]
+    
+    @staticmethod
+    async def _get_collaborative_recommendations_legacy(
+        user_id: str, 
+        geo_id: int, 
+        user_likes: List[str]
+    ) -> List[str]:
+        """Get collaborative filtering recommendations (legacy user-based approach)"""
         # Get similar users from recommendations DB
         similar_users_query = """
             SELECT similar_user_id
@@ -352,7 +433,6 @@ class RecommendationServiceV2:
         similar_user_ids = [row['similar_user_id'] for row in similar_users]
         
         # Get items liked by similar users from main DB
-        
         recommendations_query = """
             SELECT 
                 hl.handpicked_present_id::text as item_id,
@@ -390,7 +470,7 @@ class RecommendationServiceV2:
         preferred_categories = list(user_profile.preferred_categories.keys())[:3]  # Top 3 categories
         
         if not preferred_categories:
-            return await RecommendationServiceV2._get_fallback_popular_items(geo_id, user_likes)
+            return await RecommendationServiceV2._get_fallback_popular_items(geo_id, user_likes, user_id)
         
         query = """
             SELECT item_id
@@ -408,21 +488,102 @@ class RecommendationServiceV2:
         return [row['item_id'] for row in results]
     
     @staticmethod
-    async def _get_fallback_popular_items(geo_id: int, user_likes: List[str]) -> List[str]:
-        """Get fallback popular items"""
-        query = """
-            SELECT item_id
-            FROM popular_items
-            WHERE geo_id = $1
-              AND gender = 'any'
-              AND age_group = 'any'
-              AND category = 'any'
-            ORDER BY popularity_score DESC
-            LIMIT 100
+    async def _get_fallback_popular_items(geo_id: int, user_likes: List[str], user_id: str = None) -> List[str]:
         """
+        Get fallback popular items with demographic targeting if available
         
-        results = await db.execute_recommendations_query(query, geo_id)
-        return [row['item_id'] for row in results]
+        Tries demographic-specific popular items first, then falls back to generic.
+        Demographics come from cached user sync data from Rails.
+        """
+        # Try to get user demographics from cache if user_id provided
+        user_demographics = None
+        if user_id:
+            try:
+                cache_key = f"user_demographics:{user_id}"
+                user_demographics = db.cache_get(cache_key)
+                if user_demographics:
+                    logger.info(f"Found cached demographics for user {user_id}: {user_demographics}")
+            except Exception as e:
+                logger.warning(f"Error getting user demographics from cache: {e}")
+        
+        # Build fallback chain: specific demographics -> gender only -> age only -> generic
+        query_variants = []
+        
+        if user_demographics:
+            gender = user_demographics.get('gender')
+            age_group = user_demographics.get('age_group')
+            
+            # Try exact demographic match first
+            if gender and age_group:
+                query_variants.append({
+                    'gender': gender,
+                    'age_group': age_group,
+                    'category': 'any',
+                    'description': f"exact demographics ({gender}, {age_group})"
+                })
+            
+            # Try gender only
+            if gender:
+                query_variants.append({
+                    'gender': gender,
+                    'age_group': 'any', 
+                    'category': 'any',
+                    'description': f"gender only ({gender})"
+                })
+            
+            # Try age only
+            if age_group:
+                query_variants.append({
+                    'gender': 'any',
+                    'age_group': age_group,
+                    'category': 'any', 
+                    'description': f"age only ({age_group})"
+                })
+        
+        # Always add generic fallback
+        query_variants.append({
+            'gender': 'any',
+            'age_group': 'any',
+            'category': 'any',
+            'description': 'generic fallback'
+        })
+        
+        # Try each variant until we get results
+        for variant in query_variants:
+            try:
+                query = """
+                    SELECT item_id
+                    FROM popular_items
+                    WHERE geo_id = $1
+                      AND gender = $2
+                      AND age_group = $3
+                      AND category = $4
+                    ORDER BY popularity_score DESC
+                    LIMIT 100
+                """
+                
+                results = await db.execute_recommendations_query(
+                    query, 
+                    geo_id, 
+                    variant['gender'], 
+                    variant['age_group'], 
+                    variant['category']
+                )
+                
+                items = [row['item_id'] for row in results]
+                if items:
+                    logger.info(f"Found {len(items)} popular items using {variant['description']}")
+                    return items
+                else:
+                    logger.info(f"No items found for {variant['description']}, trying next fallback")
+                    
+            except Exception as e:
+                logger.warning(f"Error querying popular items with {variant['description']}: {e}")
+                continue
+        
+        # If we get here, something is wrong - return empty list
+        logger.warning(f"No popular items found for geo_id {geo_id} with any fallback method")
+        return []
     
     @staticmethod
     async def _apply_filters(

@@ -56,6 +56,25 @@ CREATE TABLE user_profiles (
 CREATE INDEX idx_user_profiles_updated ON user_profiles(updated_at);
 CREATE INDEX idx_user_profiles_interaction_count ON user_profiles(interaction_count DESC);
 
+-- Item-to-item similarity matrix (NEW for item-based collaborative filtering)
+CREATE TABLE item_similarities (
+    item_a VARCHAR(36) NOT NULL,  -- UUID as string (always smaller UUID)
+    item_b VARCHAR(36) NOT NULL,  -- UUID as string (always larger UUID)
+    similarity_score DECIMAL(6,4) NOT NULL DEFAULT 0,
+    co_occurrence_count INTEGER NOT NULL DEFAULT 0,
+    item_a_total_likes INTEGER NOT NULL DEFAULT 0,
+    item_b_total_likes INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(item_a, item_b),
+    CONSTRAINT check_item_order CHECK (item_a < item_b)  -- Prevent duplicates
+);
+
+-- Indexes for fast item similarity lookups
+CREATE INDEX idx_item_similarities_lookup_a ON item_similarities(item_a, similarity_score DESC);
+CREATE INDEX idx_item_similarities_lookup_b ON item_similarities(item_b, similarity_score DESC);
+CREATE INDEX idx_item_similarities_updated ON item_similarities(updated_at);
+CREATE INDEX idx_item_similarities_score ON item_similarities(similarity_score DESC);
+
 -- Placeholder function for refresh_popular_items 
 -- Real population happens in Python background jobs that query both databases
 CREATE OR REPLACE FUNCTION refresh_popular_items() RETURNS void AS $$
