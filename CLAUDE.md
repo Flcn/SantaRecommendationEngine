@@ -146,6 +146,8 @@ curl -H "Authorization: Basic bXlzYW50YV9zZXJ2aWNlOm15c2FudGFfcmVjX2Rldl8yMDI0X3
 **Note: Hot reloading is now enabled! Code changes will automatically reload the FastAPI server without needing to restart the container.**
 
 ### Testing
+
+#### Local Testing
 ```bash
 # Run all tests
 python3 -m pytest tests/ -v
@@ -163,6 +165,30 @@ python run_tests.py
 python run_tests.py popular_items
 python run_tests.py personalized_recommendations
 ```
+
+#### Docker Container Testing
+```bash
+# Run all tests in Docker container (recommended)
+sudo docker-compose exec recommendation_engine python3 -m pytest tests/ -v
+
+# Run specific test file in container
+sudo docker-compose exec recommendation_engine python3 -m pytest tests/test_popular_items.py -v
+
+# Run specific test pattern in container
+sudo docker-compose exec recommendation_engine python3 -m pytest -k "cache_key" -v
+
+# Run tests with test runner in container
+sudo docker-compose exec recommendation_engine python run_tests.py
+
+# Run specific test categories in container
+sudo docker-compose exec recommendation_engine python run_tests.py popular_items
+sudo docker-compose exec recommendation_engine python run_tests.py personalized_recommendations
+
+# Get shell access to container for debugging
+sudo docker-compose exec recommendation_engine bash
+```
+
+**Note: Docker container testing is recommended as it uses the same environment as production deployment.**
 
 ### Database Operations
 ```bash
