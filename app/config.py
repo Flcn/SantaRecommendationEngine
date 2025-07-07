@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     log_level: str = "info"
     
     # HTTP Basic Authentication
-    basic_auth_username: str = "mysanta_service"
-    basic_auth_password: str = "change_me_in_production"
+    basic_auth_username: str = os.getenv("BASIC_AUTH_USERNAME", "mysanta_service")
+    basic_auth_password: str = os.getenv("BASIC_AUTH_PASSWORD", "change_me_in_production")
     
     @property
     def is_development(self) -> bool:

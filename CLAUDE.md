@@ -129,10 +129,18 @@ docker-compose exec recommendation_engine bash
 docker-compose restart recommendation_engine
 
 # Test new demographics sync API (Phase 1)
-curl -u "mysanta_service:mysanta_rec_dev_2024_secure!" -X PUT \
-  "http://localhost:8001/user-profile/USER_ID" \
+# IMPORTANT: Use base64 encoding to avoid shell interpretation of special characters
+# Generate base64 credentials: echo -n "username:password" | base64
+curl -H "Authorization: Basic bXlzYW50YV9zZXJ2aWNlOm15c2FudGFfcmVjX2Rldl8yMDI0X3NlY3VyZSE=" \
+  -X PUT "http://localhost:8001/user-profile/USER_ID" \
   -H "Content-Type: application/json" \
   -d '{"gender": "male", "age_group": "25-34", "locale": "ru", "geo_id": 213}'
+
+# Test personalized recommendations
+curl -H "Authorization: Basic bXlzYW50YV9zZXJ2aWNlOm15c2FudGFfcmVjX2Rldl8yMDI0X3NlY3VyZSE=" \
+  -X POST "http://localhost:8001/personalized" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "test-user-123", "geo_id": 213, "pagination": {"page": 1, "limit": 5}}'
 ```
 
 **Note: Hot reloading is now enabled! Code changes will automatically reload the FastAPI server without needing to restart the container.**
@@ -197,6 +205,26 @@ LOG_LEVEL=info
 BASIC_AUTH_USERNAME=mysanta_service
 BASIC_AUTH_PASSWORD=your_secure_password_here
 ```
+
+### Security Notes
+
+**⚠️ IMPORTANT: Authentication with Special Characters**
+
+When testing API endpoints with curl, passwords containing special characters (like `!`) must be handled carefully:
+
+1. **Use Base64 Encoding** (Recommended):
+   ```bash
+   # Generate base64 credentials
+   echo -n "username:password" | base64
+   
+   # Use in curl requests
+   curl -H "Authorization: Basic <base64_string>" -X GET http://localhost:8001/health
+   ```
+
+2. **Avoid storing credentials in code** - Always use environment variables
+3. **Use proper escaping** if using direct username:password format with curl -u
+
+The password in docker-compose.yaml contains `!` which requires base64 encoding for API testing.
 
 ### Key Configuration Files
 - `app/config.py` - Application settings

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting recommendation service...")
     await db.init_pools()
     
-    # Debug: Print configuration values
+    # Debug: Print configuration values (excluding sensitive data)
     logger.info("=== CONFIGURATION DEBUG ===")
     logger.info(f"cache_ttl_popular: {settings.cache_ttl_popular}s")
     logger.info(f"cache_ttl_personalized: {settings.cache_ttl_personalized}s")
