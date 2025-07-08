@@ -15,7 +15,8 @@ from app.models import (
     PopularItemsRequest, 
     PersonalizedRequest,
     RecommendationResponse,
-    SimilarUsersRequest
+    SimilarUsersRequest,
+    UserDemographicsUpdate
 )
 from app.recommendation_service_v2 import RecommendationServiceV2
 
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting recommendation service...")
     await db.init_pools()
     
-    # Debug: Print configuration values
+    # Debug: Print configuration values (excluding sensitive data)
     logger.info("=== CONFIGURATION DEBUG ===")
     logger.info(f"cache_ttl_popular: {settings.cache_ttl_popular}s")
     logger.info(f"cache_ttl_personalized: {settings.cache_ttl_personalized}s")
@@ -316,6 +317,51 @@ async def manual_update_user_profiles():
         
     except Exception as e:
         logger.error(f"Error in manual user profiles update: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/user-profile/{user_id}")
+async def sync_user_profile(
+    user_id: str, 
+    demographics: UserDemographicsUpdate,
+    username: str = Depends(verify_credentials)
+):
+    """
+    Sync user demographic data from Rails for immediate profile updates
+    
+    Called by Rails after user profile changes to update recommendation
+    demographics immediately rather than waiting for background jobs.
+    
+    Updates user's demographic targeting for popular items recommendations.
+    """
+    try:
+        logger.info(f"Syncing demographics for user {user_id}: {demographics.dict()}")
+        
+        # Store user demographics in cache for immediate use
+        cache_key = f"user_demographics:{user_id}"
+        await db.cache_set_async(cache_key, demographics.dict(), settings.cache_ttl_user_profile)
+        
+        # Invalidate user-specific caches to force refresh
+        cache_patterns = [
+            f"personalized:{user_id}:*",
+            f"user_profile:{user_id}"
+        ]
+        
+        for pattern in cache_patterns:
+            # Simple invalidation - in production you might want more sophisticated pattern matching
+            await db.cache_delete_async(pattern)
+        
+        logger.info(f"Successfully synced demographics for user {user_id}")
+        
+        return {
+            "status": "success",
+            "message": f"User {user_id} demographics updated",
+            "demographics": demographics.dict(),
+            "cached_until": "4 hours from now"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error syncing user demographics for {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

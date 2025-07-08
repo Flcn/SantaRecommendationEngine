@@ -101,6 +101,23 @@ class ItemFeatures(BaseModel):
     created_at: str
 
 
+class UserDemographicsUpdate(BaseModel):
+    """User demographics update from Rails for real-time sync"""
+    gender: Optional[str] = Field(None, description="Gender: 'male', 'female', or None")
+    age_group: Optional[str] = Field(None, description="Age group: '18-24', '25-34', '35-44', '45+', 'unknown'")
+    locale: Optional[str] = Field(None, description="Locale: 'ru', 'en', etc.")
+    geo_id: Optional[int] = Field(None, description="Geographic region ID")
+    
+    @field_validator('gender')
+    @classmethod
+    def normalize_gender(cls, v):
+        """Convert Rails gender enum to recommendation engine format"""
+        if v is None:
+            return None
+        gender_map = {'male': 'm', 'female': 'f'}
+        return gender_map.get(v, v)
+
+
 class ServiceStats(BaseModel):
     """Service statistics"""
     total_items: int

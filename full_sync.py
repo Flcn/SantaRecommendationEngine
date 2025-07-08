@@ -58,10 +58,13 @@ class FullSyncManager:
             # Step 3: Create user profiles (ALL users)
             await FullSyncManager._full_user_profiles_sync()
             
-            # Step 4: Build user similarities (ALL users)
+            # Step 4: Build item similarities (NEW - item-based approach)
+            await FullSyncManager._build_item_similarity_matrix()
+            
+            # Step 5: Build user similarities (ALL users - legacy approach)
             await FullSyncManager._full_user_similarities_sync()
             
-            # Step 5: Cache cleanup
+            # Step 6: Cache cleanup
             await FullSyncManager._cleanup_cache()
             
             total_time = (time.time() - start_time)
@@ -94,6 +97,10 @@ class FullSyncManager:
             # Clear user similarities
             await db.execute_recommendations_command("DELETE FROM user_similarities")
             logger.info("   ✅ Cleared user_similarities table")
+            
+            # Clear item similarities (NEW)
+            await db.execute_recommendations_command("DELETE FROM item_similarities")
+            logger.info("   ✅ Cleared item_similarities table")
             
             logger.info("✅ Step 1 completed: Old data cleared")
             
@@ -353,9 +360,99 @@ class FullSyncManager:
         )
     
     @staticmethod
+    async def _build_item_similarity_matrix():
+        """Build item-to-item similarity matrix"""
+        logger.info("🔗 Step 4: Building item-to-item similarity matrix...")
+        start_time = time.time()
+        
+        try:
+            # Calculate item-to-item similarities using Jaccard similarity
+            item_similarity_query = """
+                WITH item_pairs AS (
+                    SELECT 
+                        l1.handpicked_present_id::text as item_a,
+                        l2.handpicked_present_id::text as item_b,
+                        COUNT(*) as co_occurrence_count
+                    FROM handpicked_likes l1
+                    JOIN handpicked_likes l2 ON l1.user_id = l2.user_id
+                    WHERE l1.handpicked_present_id != l2.handpicked_present_id
+                      AND l1.handpicked_present_id::text < l2.handpicked_present_id::text  -- Avoid duplicates
+                    GROUP BY l1.handpicked_present_id, l2.handpicked_present_id
+                    HAVING COUNT(*) >= 3  -- Minimum 3 users must like both items
+                ),
+                item_totals AS (
+                    SELECT 
+                        handpicked_present_id::text as item_id,
+                        COUNT(*) as total_likes
+                    FROM handpicked_likes
+                    GROUP BY handpicked_present_id
+                )
+                SELECT 
+                    ip.item_a,
+                    ip.item_b,
+                    ip.co_occurrence_count,
+                    it1.total_likes as item_a_total_likes,
+                    it2.total_likes as item_b_total_likes,
+                    -- Jaccard similarity: intersection / union
+                    ip.co_occurrence_count::float / (it1.total_likes + it2.total_likes - ip.co_occurrence_count) as similarity_score
+                FROM item_pairs ip
+                JOIN item_totals it1 ON ip.item_a = it1.item_id
+                JOIN item_totals it2 ON ip.item_b = it2.item_id
+                WHERE ip.co_occurrence_count::float / (it1.total_likes + it2.total_likes - ip.co_occurrence_count) >= 0.1  -- 10% minimum similarity
+                ORDER BY similarity_score DESC
+                LIMIT 100000  -- Limit to top 100k similarities
+            """
+            
+            logger.info("   🔍 Executing item similarity calculation...")
+            similarities = await db.execute_main_query(item_similarity_query)
+            logger.info(f"   📊 Found {len(similarities)} item similarities")
+            
+            # Insert item similarities
+            if similarities:
+                insert_query = """
+                    INSERT INTO item_similarities 
+                    (item_a, item_b, similarity_score, co_occurrence_count, item_a_total_likes, item_b_total_likes, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                """
+                
+                inserted_count = 0
+                for i, sim in enumerate(similarities):
+                    try:
+                        # Debug first few similarities
+                        if i < 3:
+                            logger.info(f"   🔍 Similarity {i}: {sim}")
+                        
+                        await db.execute_recommendations_command(
+                            insert_query,
+                            str(sim['item_a']),
+                            str(sim['item_b']),
+                            float(sim['similarity_score']),
+                            int(sim['co_occurrence_count']),
+                            int(sim['item_a_total_likes']),
+                            int(sim['item_b_total_likes'])
+                        )
+                        inserted_count += 1
+                        
+                        if inserted_count % 1000 == 0:
+                            logger.info(f"   📈 Inserted {inserted_count} similarities...")
+                            
+                    except Exception as e:
+                        logger.warning(f"   ⚠️ Failed to insert similarity {i}: {e}")
+                        logger.warning(f"   🔍 Similarity data: {sim}")
+                
+                logger.info(f"   ✅ Inserted {inserted_count} item similarities")
+            
+            computation_time = (time.time() - start_time) * 1000
+            logger.info(f"✅ Step 4 completed in {computation_time:.2f}ms")
+            
+        except Exception as e:
+            logger.error(f"❌ Step 4 failed: {e}")
+            raise
+    
+    @staticmethod
     async def _full_user_similarities_sync():
         """Build user similarities for ALL users"""
-        logger.info("🤝 Step 4: Full user similarities synchronization...")
+        logger.info("🤝 Step 5: Full user similarities synchronization...")
         start_time = time.time()
         
         try:
@@ -401,10 +498,10 @@ class FullSyncManager:
             logger.info(f"   📊 Final user_similarities count: {final_count['total'] if final_count else 0}")
             
             computation_time = (time.time() - start_time) * 1000
-            logger.info(f"✅ Step 4 completed in {computation_time:.2f}ms")
+            logger.info(f"✅ Step 5 completed in {computation_time:.2f}ms")
             
         except Exception as e:
-            logger.error(f"❌ Step 4 failed: {e}")
+            logger.error(f"❌ Step 5 failed: {e}")
             raise
     
     @staticmethod
@@ -483,13 +580,13 @@ class FullSyncManager:
     @staticmethod
     async def _cleanup_cache():
         """Clean up cache data"""
-        logger.info("🧽 Step 5: Cache cleanup...")
+        logger.info("🧽 Step 6: Cache cleanup...")
         
         try:
             await db.cleanup_cache_data()
-            logger.info("✅ Step 5 completed: Cache cleaned up")
+            logger.info("✅ Step 6 completed: Cache cleaned up")
         except Exception as e:
-            logger.error(f"❌ Step 5 failed: {e}")
+            logger.error(f"❌ Step 6 failed: {e}")
             raise
 
 

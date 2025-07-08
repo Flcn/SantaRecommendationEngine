@@ -1,5 +1,6 @@
 import os
 from typing import Optional
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -63,9 +64,10 @@ class Settings(BaseSettings):
     # Query performance limits
     max_query_time: float = 10.0  # 10 seconds max per query (for full sync operations)
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False
+    )
 
 
 settings = Settings()
