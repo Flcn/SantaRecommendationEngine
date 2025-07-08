@@ -61,10 +61,7 @@ class FullSyncManager:
             # Step 4: Build item similarities (NEW - item-based approach)
             await FullSyncManager._build_item_similarity_matrix()
             
-            # Step 5: Build user similarities (ALL users - legacy approach)
-            await FullSyncManager._full_user_similarities_sync()
-            
-            # Step 6: Cache cleanup
+            # Step 5: Cache cleanup
             await FullSyncManager._cleanup_cache()
             
             total_time = (time.time() - start_time)
@@ -93,10 +90,6 @@ class FullSyncManager:
             # Clear user profiles  
             await db.execute_recommendations_command("DELETE FROM user_profiles")
             logger.info("   ✅ Cleared user_profiles table")
-            
-            # Clear user similarities
-            await db.execute_recommendations_command("DELETE FROM user_similarities")
-            logger.info("   ✅ Cleared user_similarities table")
             
             # Clear item similarities (NEW)
             await db.execute_recommendations_command("DELETE FROM item_similarities")
@@ -449,144 +442,17 @@ class FullSyncManager:
             logger.error(f"❌ Step 4 failed: {e}")
             raise
     
-    @staticmethod
-    async def _full_user_similarities_sync():
-        """Build user similarities for ALL users"""
-        logger.info("🤝 Step 5: Full user similarities synchronization...")
-        start_time = time.time()
-        
-        try:
-            # Get top 10k most active users for similarity computation
-            all_users_query = """
-                SELECT user_id, COUNT(*) as like_count
-                FROM handpicked_likes
-                GROUP BY user_id
-                ORDER BY like_count DESC
-                LIMIT 10000
-            """
-            
-            all_users = await db.execute_main_query(all_users_query)
-            logger.info(f"   👥 Building similarities for {len(all_users)} users")
-            
-            if not all_users:
-                logger.info("   ℹ️ No users found for similarity computation")
-                return
-            
-            # Process users in batches (increased batch size for better performance)
-            batch_size = 20  # Increased to 20 users per batch for better throughput
-            for i in range(0, len(all_users), batch_size):
-                batch = all_users[i:i+batch_size]
-                user_ids = [str(u['user_id']) for u in batch]
-                
-                logger.info(f"   🔄 Processing similarity batch {i//batch_size + 1}/{(len(all_users) + batch_size - 1)//batch_size}")
-                logger.info(f"      🔍 DEBUG: Batch contains {len(user_ids)} users")
-                
-                batch_start_time = time.time()
-                try:
-                    await FullSyncManager._compute_user_similarities_batch(user_ids)
-                    batch_time = (time.time() - batch_start_time) * 1000
-                    logger.info(f"      ✅ Batch completed in {batch_time:.2f}ms")
-                except Exception as e:
-                    batch_time = (time.time() - batch_start_time) * 1000
-                    logger.error(f"      ❌ Batch failed after {batch_time:.2f}ms: {e}")
-                    # Continue with next batch instead of failing completely
-                    continue
-            
-            # Check final results
-            count_query = "SELECT COUNT(*) as total FROM user_similarities"
-            final_count = await db.execute_recommendations_query_one(count_query)
-            logger.info(f"   📊 Final user_similarities count: {final_count['total'] if final_count else 0}")
-            
-            computation_time = (time.time() - start_time) * 1000
-            logger.info(f"✅ Step 5 completed in {computation_time:.2f}ms")
-            
-        except Exception as e:
-            logger.error(f"❌ Step 5 failed: {e}")
-            raise
-    
-    @staticmethod
-    async def _compute_user_similarities_batch(user_ids: List[str]):
-        """Compute similarities for a batch of users"""
-        try:
-            logger.info(f"      🔍 DEBUG: Processing {len(user_ids)} users for similarities")
-            logger.info(f"      🔍 DEBUG: User IDs sample: {user_ids[:3]}...")
-            
-            # Get user similarity data
-            similarity_query = """
-                WITH user_items AS (
-                    SELECT user_id::text, array_agg(handpicked_present_id) as liked_items
-                    FROM handpicked_likes
-                    WHERE user_id::text = ANY($1::varchar[])
-                    GROUP BY user_id
-                ),
-                similarities AS (
-                    SELECT 
-                        u1.user_id as user_id,
-                        u2.user_id as similar_user_id,
-                        array_length(array(SELECT unnest(u1.liked_items) INTERSECT SELECT unnest(u2.liked_items)), 1) as overlap
-                    FROM user_items u1
-                    CROSS JOIN user_items u2
-                    WHERE u1.user_id != u2.user_id
-                      AND array_length(array(SELECT unnest(u1.liked_items) INTERSECT SELECT unnest(u2.liked_items)), 1) >= 1
-                )
-                SELECT 
-                    user_id,
-                    similar_user_id,
-                    overlap::float / (overlap + 10) as similarity_score
-                FROM similarities
-                ORDER BY user_id, similarity_score DESC
-            """
-            
-            logger.info(f"      🔍 DEBUG: Executing similarity query for {len(user_ids)} users")
-            start_time = time.time()
-            similarities = await db.execute_main_query(similarity_query, user_ids)
-            query_time = (time.time() - start_time) * 1000
-            logger.info(f"      🔍 DEBUG: Query completed in {query_time:.2f}ms, found {len(similarities)} similarities")
-            
-            if similarities:
-                logger.info(f"      🔍 DEBUG: Processing {len(similarities)} similarity records for insertion")
-                # Build batch insert query
-                values_list = []
-                params = []
-                param_count = 0
-                
-                for sim in similarities:
-                    param_count += 3
-                    values_list.append(f"(${param_count-2}, ${param_count-1}, ${param_count})")
-                    params.extend([sim['user_id'], sim['similar_user_id'], sim['similarity_score']])
-                
-                if values_list:
-                    insert_query = f"""
-                        INSERT INTO user_similarities (user_id, similar_user_id, similarity_score)
-                        VALUES {', '.join(values_list)}
-                        ON CONFLICT (user_id, similar_user_id) DO UPDATE SET
-                            similarity_score = EXCLUDED.similarity_score
-                    """
-                    
-                    logger.info(f"      🔍 DEBUG: Executing insert query with {len(params)} parameters")
-                    start_time = time.time()
-                    await db.execute_recommendations_command(insert_query, *params)
-                    insert_time = (time.time() - start_time) * 1000
-                    logger.info(f"      🔍 DEBUG: Insert completed in {insert_time:.2f}ms")
-            else:
-                logger.info(f"      🔍 DEBUG: No similarities found for this batch")
-            
-        except Exception as e:
-            import traceback
-            logger.error(f"Error computing similarities batch: {e}")
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            logger.error(f"User IDs that caused error: {user_ids}")
     
     @staticmethod
     async def _cleanup_cache():
         """Clean up cache data"""
-        logger.info("🧽 Step 6: Cache cleanup...")
+        logger.info("🧽 Step 5: Cache cleanup...")
         
         try:
             await db.cleanup_cache_data()
-            logger.info("✅ Step 6 completed: Cache cleaned up")
+            logger.info("✅ Step 5 completed: Cache cleaned up")
         except Exception as e:
-            logger.error(f"❌ Step 6 failed: {e}")
+            logger.error(f"❌ Step 5 failed: {e}")
             raise
 
 
