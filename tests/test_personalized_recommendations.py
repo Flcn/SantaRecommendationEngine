@@ -16,11 +16,12 @@ class TestPersonalizedRecommendations:
         """Test personalized recommendations with cache hit"""
         # Setup cache hit
         cached_data = {
-            'items': [301, 302, 303],
+            'items': ['301', '302', '303'],
             'pagination': {
                 'page': 1,
                 'limit': 20,
                 'total_pages': 1,
+                'total_count': 3,
                 'has_next': False,
                 'has_previous': False
             }
@@ -32,7 +33,7 @@ class TestPersonalizedRecommendations:
         
         # Assertions
         assert isinstance(response, RecommendationResponse)
-        assert response.items == [301, 302, 303]
+        assert response.items == ['301', '302', '303']
         assert response.cache_hit is True
         assert response.algorithm_used == "personalized"
         assert response.computation_time_ms < 100  # Should be very fast
@@ -50,18 +51,18 @@ class TestPersonalizedRecommendations:
         mock_db.cache_get.side_effect = [None]  # No cached demographics
         
         # Mock fallback popular items
-        fallback_items = [{"item_id": 401}, {"item_id": 402}]
+        fallback_items = [{"item_id": "401"}, {"item_id": "402"}]
         mock_db.execute_recommendations_query.return_value = fallback_items
         mock_db.execute_main_query.side_effect = [
             [],  # User likes query
-            [{"id": 401}, {"id": 402}]  # Filtered fallback items
+            [{"id": "401"}, {"id": "402"}]  # Filtered fallback items
         ]
         
         with patch('app.recommendation_service_v2.db', mock_db):
             response = await RecommendationServiceV2.get_personalized_recommendations(sample_personalized_request)
         
         # Assertions
-        assert response.items == [401, 402]
+        assert response.items == ['401', '402']
         assert response.algorithm_used == "popular_fallback"
         assert response.cache_hit is False
     
@@ -71,12 +72,12 @@ class TestPersonalizedRecommendations:
         mock_db.cache_get.return_value = None
         
         # Setup user with enough interactions for collaborative filtering
-        user_profile = sample_user_profile.copy()
+        user_profile = sample_user_profile.model_copy()
         user_profile.interaction_count = 5
         
         mock_db.execute_main_query.return_value = sample_user_likes
         mock_db.execute_recommendations_query_one.return_value = {
-            'user_id': 123,
+            'user_id': '123',
             'preferred_categories': user_profile.preferred_categories,
             'preferred_platforms': user_profile.preferred_platforms,
             'avg_price': user_profile.avg_price,
@@ -86,22 +87,23 @@ class TestPersonalizedRecommendations:
             'last_interaction_at': None
         }
         
-        # Mock similar users and their recommendations
-        similar_users = [{"similar_user_id": 456}, {"similar_user_id": 789}]
-        collaborative_recs = [{"item_id": 501, "like_count": 3}, {"item_id": 502, "like_count": 2}]
+        # Mock similar items (item-based collaborative filtering)
+        similar_items = [
+            {"similar_item": "501", "similarity_score": 0.8},
+            {"similar_item": "502", "similarity_score": 0.7}
+        ]
         
-        mock_db.execute_recommendations_query.side_effect = [similar_users]
+        mock_db.execute_recommendations_query.return_value = similar_items
         mock_db.execute_main_query.side_effect = [
             sample_user_likes,  # User likes
-            collaborative_recs,  # Collaborative recommendations
-            [{"id": 501}, {"id": 502}]  # Filtered results
+            [{"item_id": "501"}, {"item_id": "502"}]  # Filtered results
         ]
         
         with patch('app.recommendation_service_v2.db', mock_db):
             response = await RecommendationServiceV2.get_personalized_recommendations(sample_personalized_request)
         
         # Assertions
-        assert response.items == [501, 502]
+        assert response.items == ['501', '502']
         assert response.algorithm_used == "collaborative"
         assert response.cache_hit is False
     
@@ -111,12 +113,12 @@ class TestPersonalizedRecommendations:
         mock_db.cache_get.return_value = None
         
         # Setup user with limited interactions for content-based filtering
-        user_profile = sample_user_profile.copy()
+        user_profile = sample_user_profile.model_copy()
         user_profile.interaction_count = 2
         
         mock_db.execute_main_query.return_value = sample_user_likes
         mock_db.execute_recommendations_query_one.return_value = {
-            'user_id': 123,
+            'user_id': '123',
             'preferred_categories': user_profile.preferred_categories,
             'preferred_platforms': user_profile.preferred_platforms,
             'avg_price': user_profile.avg_price,
@@ -127,18 +129,18 @@ class TestPersonalizedRecommendations:
         }
         
         # Mock content-based recommendations
-        content_recs = [{"item_id": 601}, {"item_id": 602}]
+        content_recs = [{"item_id": "601"}, {"item_id": "602"}]
         mock_db.execute_recommendations_query.return_value = content_recs
         mock_db.execute_main_query.side_effect = [
             sample_user_likes,  # User likes
-            [{"id": 601}, {"id": 602}]  # Filtered results
+            [{"id": "601"}, {"id": "602"}]  # Filtered results
         ]
         
         with patch('app.recommendation_service_v2.db', mock_db):
             response = await RecommendationServiceV2.get_personalized_recommendations(sample_personalized_request)
         
         # Assertions
-        assert response.items == [601, 602]
+        assert response.items == ['601', '602']
         assert response.algorithm_used == "content_based"
         assert response.cache_hit is False
     
@@ -150,8 +152,8 @@ class TestPersonalizedRecommendations:
         mock_db.execute_recommendations_query_one.return_value = None  # New user
         
         # Mock fallback items before and after filtering
-        fallback_items = [{"item_id": i} for i in range(701, 710)]  # 9 items
-        filtered_items = [{"id": i} for i in range(701, 706)]  # 5 items after price filter
+        fallback_items = [{"item_id": str(i)} for i in range(701, 710)]  # 9 items
+        filtered_items = [{"id": str(i)} for i in range(701, 706)]  # 5 items after price filter
         
         mock_db.execute_recommendations_query.return_value = fallback_items
         mock_db.execute_main_query.side_effect = [
@@ -163,7 +165,7 @@ class TestPersonalizedRecommendations:
             response = await RecommendationServiceV2.get_personalized_recommendations(sample_personalized_request)
         
         # Assertions
-        assert response.items == [701, 702, 703, 704, 705]
+        assert response.items == ['701', '702', '703', '704', '705']
         assert len(response.items) == 5  # Filtered from 9 to 5
         
         # Verify filter was applied
@@ -178,11 +180,11 @@ class TestPersonalizedRecommendations:
         mock_db.execute_recommendations_query_one.return_value = None
         
         # Setup large dataset
-        large_dataset = [{"item_id": i} for i in range(1, 101)]  # 100 items
+        large_dataset = [{"item_id": str(i)} for i in range(1, 101)]  # 100 items
         mock_db.execute_recommendations_query.return_value = large_dataset
         mock_db.execute_main_query.side_effect = [
             sample_user_likes,  # User likes
-            [{"id": i} for i in range(1, 101)]  # Filtered results
+            [{"id": str(i)} for i in range(1, 101)]  # Filtered results
         ]
         
         # Test page 2
@@ -194,7 +196,7 @@ class TestPersonalizedRecommendations:
         
         # Assertions for pagination
         assert len(response.items) == 20
-        assert response.items == list(range(21, 41))  # Second page (items 21-40)
+        assert response.items == [str(i) for i in range(21, 41)]  # Second page (items 21-40)
         assert response.pagination.page == 2
         assert response.pagination.has_next is True
         assert response.pagination.has_previous is True
@@ -216,7 +218,6 @@ class TestPersonalizedRecommendations:
                 # Expected behavior - service should raise exceptions
                 pass
     
-    @pytest.mark.unit
     def test_build_personalized_cache_key(self, sample_personalized_request):
         """Test cache key generation for personalized recommendations"""
         cache_key = RecommendationServiceV2._build_personalized_cache_key(sample_personalized_request)
@@ -224,7 +225,6 @@ class TestPersonalizedRecommendations:
         expected_key = "v3:personalized:123:213:1:20:pf500:pt2000:catelectronics"
         assert cache_key == expected_key
     
-    @pytest.mark.unit
     def test_build_personalized_cache_key_no_filters(self):
         """Test cache key generation without filters"""
         from app.models import PersonalizedRequest, Pagination

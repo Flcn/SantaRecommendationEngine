@@ -89,7 +89,7 @@ class RecommendationServiceV2:
             # Cache result
             cache_data = {
                 'items': page_items,
-                'pagination': pagination_info.dict()
+                'pagination': pagination_info.model_dump()
             }
             db.cache_set(cache_key, cache_data, settings.cache_ttl_popular)
             
@@ -186,7 +186,7 @@ class RecommendationServiceV2:
             # Cache result
             cache_data = {
                 'items': page_items,
-                'pagination': pagination_info.dict()
+                'pagination': pagination_info.model_dump()
             }
             db.cache_set(cache_key, cache_data, settings.cache_ttl_personalized)
             

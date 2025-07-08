@@ -11,7 +11,6 @@ from app.models import Filters
 class TestHelperMethods:
     """Test cases for helper methods"""
     
-    @pytest.mark.unit
     def test_build_popular_cache_key_basic(self):
         """Test basic cache key generation for popular items"""
         from app.models import PopularItemsRequest, UserParams, Pagination
@@ -30,7 +29,6 @@ class TestHelperMethods:
         expected = "v3:popular:213:f:25-34:electronics:1:20"
         assert cache_key == expected
     
-    @pytest.mark.unit
     def test_build_popular_cache_key_with_filters(self):
         """Test cache key generation with all filters"""
         from app.models import PopularItemsRequest, UserParams, Pagination, Filters
@@ -54,7 +52,6 @@ class TestHelperMethods:
         expected = "v3:popular:123:m:35-44:books:2:50:pf100:pt500:catfiction"
         assert cache_key == expected
     
-    @pytest.mark.unit
     def test_build_popular_cache_key_none_values(self):
         """Test cache key generation with None values"""
         from app.models import PopularItemsRequest, UserParams, Pagination
@@ -73,7 +70,6 @@ class TestHelperMethods:
         expected = "v3:popular:213:any:any:any:1:20"
         assert cache_key == expected
     
-    @pytest.mark.unit
     def test_build_personalized_cache_key_basic(self):
         """Test basic cache key generation for personalized recommendations"""
         from app.models import PersonalizedRequest, Pagination
@@ -88,7 +84,6 @@ class TestHelperMethods:
         expected = "v3:personalized:456:789:1:20"
         assert cache_key == expected
     
-    @pytest.mark.unit
     def test_build_personalized_cache_key_with_filters(self):
         """Test personalized cache key with filters"""
         from app.models import PersonalizedRequest, Pagination, Filters
@@ -258,7 +253,14 @@ class TestHelperMethods:
             {"similar_item": "501", "similarity_score": 0.8},
             {"similar_item": "502", "similarity_score": 0.7}
         ]
+        # Mock final recommendations after filtering
+        final_recs = [
+            {"item_id": "501", "popularity_boost": 3},
+            {"item_id": "502", "popularity_boost": 2}
+        ]
+        
         mock_db.execute_recommendations_query.return_value = similar_items
+        mock_db.execute_main_query.return_value = final_recs
         
         with patch('app.recommendation_service_v2.db', mock_db):
             result = await RecommendationServiceV2._get_collaborative_recommendations(
@@ -267,16 +269,16 @@ class TestHelperMethods:
         
         assert result == ["501", "502"]
         
-        # Verify similar users query
-        similar_users_call = mock_db.execute_recommendations_query.call_args
-        assert "similar_user_id" in similar_users_call[0][0]
-        assert user_id in similar_users_call[0][1:]
+        # Verify similar items query
+        similar_items_call = mock_db.execute_recommendations_query.call_args
+        assert "similar_item" in similar_items_call[0][0]
+        assert "item_similarities" in similar_items_call[0][0]
+        assert user_likes in similar_items_call[0][1:]
         
-        # Verify collaborative recommendations query
-        collab_call = mock_db.execute_main_query.call_args
-        assert "COUNT(*) as like_count" in collab_call[0][0]
-        assert [456, 789] in collab_call[0][1:]  # similar user ids
-        assert geo_id in collab_call[0][1:]
+        # Verify filtering query
+        filter_call = mock_db.execute_main_query.call_args
+        assert "popularity_boost" in filter_call[0][0]
+        assert geo_id in filter_call[0][1:]
     
     @pytest.mark.asyncio
     async def test_get_collaborative_recommendations_no_similar_users(self, mock_db):
@@ -344,10 +346,12 @@ class TestHelperMethods:
         fallback_items = [{"item_id": "701"}, {"item_id": "702"}]
         mock_db.execute_recommendations_query.return_value = fallback_items
         
-        with patch('app.recommendation_service_v2.db', mock_db):
+        with patch('app.recommendation_service_v2.db', mock_db), \
+             patch.object(RecommendationServiceV2, '_get_fallback_popular_items', new_callable=AsyncMock) as mock_fallback:
+            mock_fallback.return_value = ["701", "702"]
             result = await RecommendationServiceV2._get_content_based_recommendations(
                 user_id, geo_id, user_likes, empty_profile
             )
         
         assert result == ["701", "702"]
-        mock_fallback.assert_called_once_with(geo_id, user_likes)
+        mock_fallback.assert_called_once_with(geo_id, user_likes, user_id)

@@ -55,7 +55,7 @@ class TestPopularItems:
         
         # Assertions
         assert isinstance(response, RecommendationResponse)
-        assert response.items == [101, 102, 103, 104, 105]
+        assert response.items == ['101', '102', '103', '104', '105']
         assert response.cache_hit is False
         assert response.algorithm_used == "popular"
         assert response.pagination.page == 1
@@ -145,7 +145,6 @@ class TestPopularItems:
                 # Expected behavior - service should raise exceptions
                 pass
     
-    @pytest.mark.unit
     def test_build_popular_cache_key(self, sample_popular_request):
         """Test cache key generation for popular items"""
         cache_key = RecommendationServiceV2._build_popular_cache_key(sample_popular_request)
@@ -153,7 +152,6 @@ class TestPopularItems:
         expected_key = "v3:popular:213:f:25-34:electronics:1:20:pf500:pt2000"
         assert cache_key == expected_key
     
-    @pytest.mark.unit
     def test_build_popular_cache_key_no_filters(self):
         """Test cache key generation without filters"""
         from app.models import PopularItemsRequest, UserParams, Pagination
