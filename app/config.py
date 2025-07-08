@@ -62,7 +62,8 @@ class Settings(BaseSettings):
     user_profile_cache_hours: int = 4
     
     # Query performance limits
-    max_query_time: float = 10.0  # 10 seconds max per query (for full sync operations)
+    max_query_time: float = float(os.getenv("MAX_QUERY_TIME", "10.0"))  # seconds max per query (for regular operations)
+    full_sync_query_timeout: float = float(os.getenv("FULL_SYNC_QUERY_TIMEOUT", "300.0"))  # seconds max per query (for full sync operations only)
     
     model_config = ConfigDict(
         env_file=".env",

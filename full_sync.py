@@ -397,7 +397,7 @@ class FullSyncManager:
             """
             
             logger.info("   🔍 Executing item similarity calculation...")
-            similarities = await db.execute_main_query(item_similarity_query)
+            similarities = await db.execute_main_query(item_similarity_query, use_full_sync_timeout=True)
             logger.info(f"   📊 Found {len(similarities)} item similarities")
             
             # Insert item similarities

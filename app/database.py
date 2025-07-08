@@ -57,14 +57,16 @@ class DatabaseManager:
         if self.redis_client:
             self.redis_client.close()
     
-    async def execute_main_query(self, query: str, *args) -> List[Dict[str, Any]]:
+    async def execute_main_query(self, query: str, *args, use_full_sync_timeout: bool = False) -> List[Dict[str, Any]]:
         """Execute a query on main database (READ-ONLY)"""
         if settings.is_development:
             logger.info(f"[MAIN DB] Executing query: {query}")
             logger.info(f"[MAIN DB] Parameters: {args}")
         
+        timeout = settings.full_sync_query_timeout if use_full_sync_timeout else settings.max_query_time
+        
         async with self.main_pool.acquire() as conn:
-            rows = await conn.fetch(query, *args)
+            rows = await conn.fetch(query, *args, timeout=timeout)
             result = [dict(row) for row in rows]
             
             if settings.is_development:
