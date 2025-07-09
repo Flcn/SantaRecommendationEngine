@@ -44,25 +44,32 @@ class FullSyncManager:
         logger.info("🚀 Starting FULL SYNC for MySanta Recommendation Engine")
         logger.info("=" * 60)
         
+        # Print current timeout configuration
+        logger.info(f"⏱️  Current timeout settings:")
+        logger.info(f"   MAX_QUERY_TIME: {settings.max_query_time} seconds")
+        logger.info(f"   FULL_SYNC_QUERY_TIMEOUT: {settings.full_sync_query_timeout} seconds")
+        logger.info("=" * 60)
+        
         try:
             # Initialize database connections
             await db.init_pools()
             logger.info("✅ Database connections initialized")
             
             # Step 1: Clear old data
-            await FullSyncManager._clear_old_data()
+            # await FullSyncManager._clear_old_data()
             
             # Step 2: Refresh popular items (ALL items)
-            await FullSyncManager._full_popular_items_refresh()
+            # await FullSyncManager._full_popular_items_refresh()
             
             # Step 3: Create user profiles (ALL users)
-            await FullSyncManager._full_user_profiles_sync()
+            # await FullSyncManager._full_user_profiles_sync()
             
             # Step 4: Build item similarities (NEW - item-based approach)
+            logger.info("🔗 Starting with item similarity matrix step only...")
             await FullSyncManager._build_item_similarity_matrix()
             
             # Step 5: Cache cleanup
-            await FullSyncManager._cleanup_cache()
+            # await FullSyncManager._cleanup_cache()
             
             total_time = (time.time() - start_time)
             logger.info("=" * 60)
