@@ -55,21 +55,21 @@ class FullSyncManager:
             await db.init_pools()
             logger.info("✅ Database connections initialized")
             
-            # Step 1: Clear old data
-            # await FullSyncManager._clear_old_data()
-            
-            # Step 2: Refresh popular items (ALL items)
-            # await FullSyncManager._full_popular_items_refresh()
-            
-            # Step 3: Create user profiles (ALL users)
-            # await FullSyncManager._full_user_profiles_sync()
-            
-            # Step 4: Build item similarities (NEW - item-based approach)
-            logger.info("🔗 Starting with item similarity matrix step only...")
+            # Step 1: Build item similarities FIRST (was causing timeout)
+            logger.info("🔗 Starting with item similarity matrix step (reordered)...")
             await FullSyncManager._build_item_similarity_matrix()
             
+            # Step 2: Clear old data
+            await FullSyncManager._clear_old_data()
+            
+            # Step 3: Refresh popular items (ALL items)
+            await FullSyncManager._full_popular_items_refresh()
+            
+            # Step 4: Create user profiles (ALL users)
+            await FullSyncManager._full_user_profiles_sync()
+            
             # Step 5: Cache cleanup
-            # await FullSyncManager._cleanup_cache()
+            await FullSyncManager._cleanup_cache()
             
             total_time = (time.time() - start_time)
             logger.info("=" * 60)
