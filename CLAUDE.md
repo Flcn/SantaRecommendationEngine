@@ -76,7 +76,7 @@ POST /personalized
    git commit -m "Description of changes"
    git push origin staging
    ```
-3. **Wait for CI/CD** to build and push image (`recommendation_engine:staging`)
+3. **Wait for CI/CD** to build and push image (`recommendation_engine:staging`) - **Wait 2-3 minutes for GitHub Actions**
 4. **Deploy to staging** namespace:
    ```bash
    kubectl rollout restart deployment recommendation-engine-staging -n staging
@@ -88,7 +88,7 @@ POST /personalized
    git merge staging
    git push origin main  # or master
    ```
-7. **Wait for CI/CD** to build production image (`recommendation_engine:main`)
+7. **Wait for CI/CD** to build production image (`recommendation_engine:main`) - **Wait 2-3 minutes for GitHub Actions**
 8. **Deploy to production**:
    ```bash
    kubectl rollout restart deployment recommendation-engine-production -n default
