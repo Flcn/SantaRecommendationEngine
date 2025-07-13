@@ -54,13 +54,13 @@ async def run_oneshot():
         except Exception as e:
             logger.error(f"❌ User profiles update failed: {e}")
         
-        # 4. Update user similarities
-        logger.info("4️⃣ Running user similarities update...")
+        # 4. Update item similarities
+        logger.info("4️⃣ Running item similarities update...")
         try:
-            await BackgroundJobs.update_user_similarities()
-            logger.info("✅ User similarities update completed successfully")
+            await BackgroundJobs.update_item_similarities()
+            logger.info("✅ Item similarities update completed successfully")
         except Exception as e:
-            logger.error(f"❌ User similarities update failed: {e}")
+            logger.error(f"❌ Item similarities update failed: {e}")
         
         logger.info("🎉 All background jobs completed!")
         
