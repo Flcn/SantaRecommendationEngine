@@ -27,7 +27,7 @@ class BackgroundJobs:
             logger.info("Starting popular items refresh...")
             start_time = time.time()
             
-            # Query main database for popular items data
+            # Query main database for popular items data (all-time scoring like full_sync)
             # Note: Rails uses UUIDs for IDs, so we need to convert to string
             popular_items_query = """
                 SELECT 
@@ -37,38 +37,24 @@ class BackgroundJobs:
                     COALESCE(hp.categories->>'category', 'any') as category,
                     hp.id::text as item_id,  -- Convert UUID to string
                     
-                    -- Time-weighted popularity score
+                    -- All-time popularity score (same as full_sync)
                     COALESCE(click_scores.score, 0) + COALESCE(like_scores.score, 0) as popularity_score
                     
                 FROM handpicked_presents hp
                 LEFT JOIN (
-                    -- Click scores with time weighting
+                    -- All-time click scores (simplified)
                     SELECT 
                         handpicked_present_id,
-                        SUM(
-                            CASE 
-                                WHEN created_at > NOW() - INTERVAL '7 days' THEN 3.0
-                                WHEN created_at > NOW() - INTERVAL '30 days' THEN 2.0
-                                ELSE 1.0
-                            END
-                        ) as score
+                        COUNT(*) * 1.0 as score
                     FROM handpicked_present_clicks 
-                    WHERE created_at > NOW() - INTERVAL '90 days'
                     GROUP BY handpicked_present_id
                 ) click_scores ON hp.id = click_scores.handpicked_present_id
                 LEFT JOIN (
-                    -- Like scores with time weighting (higher weight than clicks)
+                    -- All-time like scores (higher weight than clicks)
                     SELECT 
                         handpicked_present_id,
-                        SUM(
-                            CASE 
-                                WHEN created_at > NOW() - INTERVAL '7 days' THEN 5.0
-                                WHEN created_at > NOW() - INTERVAL '30 days' THEN 3.0
-                                ELSE 1.5
-                            END
-                        ) as score
+                        COUNT(*) * 3.0 as score
                     FROM handpicked_likes 
-                    WHERE created_at > NOW() - INTERVAL '90 days'
                     GROUP BY handpicked_present_id
                 ) like_scores ON hp.id = like_scores.handpicked_present_id
 
@@ -133,12 +119,13 @@ class BackgroundJobs:
             start_time = time.time()
             
             # Get users with new likes since last profile update
-            # First get users with recent likes from main DB
+            # Check for users with recent activity but analyze their complete history
             recent_likes_query = """
-                SELECT DISTINCT user_id, MAX(created_at) as latest_like
+                SELECT DISTINCT user_id, MAX(created_at) as latest_like, COUNT(*) as total_likes
                 FROM handpicked_likes 
                 WHERE created_at > NOW() - INTERVAL '7 days'
                 GROUP BY user_id
+                ORDER BY total_likes DESC
                 LIMIT 1000
             """
             
@@ -191,7 +178,7 @@ class BackgroundJobs:
     async def _update_single_user_profile(user_id: int):
         """Update profile for a single user"""
         try:
-            # Get user's interaction data from main DB
+            # Get user's ALL interaction data from main DB (same as full_sync)
             profile_query = """
                 SELECT 
                     hp.categories,
@@ -202,7 +189,7 @@ class BackgroundJobs:
                 JOIN handpicked_presents hp ON hl.handpicked_present_id = hp.id
                 WHERE hl.user_id = $1
                 ORDER BY hl.created_at DESC
-                LIMIT 50
+                LIMIT 1000
             """
             
             interactions = await db.execute_main_query(profile_query, user_id)
@@ -405,6 +392,118 @@ class BackgroundJobs:
             logger.error(f"Error updating similarities batch: {e}")
     
     @staticmethod
+    async def update_item_similarities():
+        """
+        Update item similarities for items with new interactions (incremental)
+        Only processes items that had new likes in the last 24 hours
+        """
+        try:
+            logger.info("Starting incremental item similarities update...")
+            start_time = time.time()
+            
+            # Get items that had new interactions in last 24 hours
+            recent_items_query = """
+                SELECT DISTINCT handpicked_present_id::text as item_id
+                FROM handpicked_likes 
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                LIMIT 100
+            """
+            
+            recent_items = await db.execute_main_query(recent_items_query)
+            
+            if not recent_items:
+                logger.info("No items with recent interactions found")
+                return
+            
+            item_ids = [item['item_id'] for item in recent_items]
+            logger.info(f"Updating similarities for {len(item_ids)} items with recent activity")
+            
+            # Calculate similarities for these items (lighter version of full_sync logic)
+            similarity_query = """
+                WITH recent_item_pairs AS (
+                    SELECT 
+                        l1.handpicked_present_id::text as item_a,
+                        l2.handpicked_present_id::text as item_b,
+                        COUNT(*) as co_occurrence_count
+                    FROM handpicked_likes l1
+                    JOIN handpicked_likes l2 ON l1.user_id = l2.user_id
+                    WHERE (l1.handpicked_present_id::text = ANY($1::varchar[]) OR l2.handpicked_present_id::text = ANY($1::varchar[]))
+                      AND l1.handpicked_present_id != l2.handpicked_present_id
+                      AND l1.handpicked_present_id::text < l2.handpicked_present_id::text
+                    GROUP BY l1.handpicked_present_id, l2.handpicked_present_id
+                    HAVING COUNT(*) >= 2  -- Minimum 2 users (lighter threshold)
+                ),
+                item_totals AS (
+                    SELECT 
+                        handpicked_present_id::text as item_id,
+                        COUNT(*) as total_likes
+                    FROM handpicked_likes
+                    WHERE handpicked_present_id::text = ANY($1::varchar[])
+                       OR handpicked_present_id IN (
+                           SELECT DISTINCT l2.handpicked_present_id 
+                           FROM handpicked_likes l1 
+                           JOIN handpicked_likes l2 ON l1.user_id = l2.user_id 
+                           WHERE l1.handpicked_present_id::text = ANY($1::varchar[])
+                       )
+                    GROUP BY handpicked_present_id
+                )
+                SELECT 
+                    rip.item_a,
+                    rip.item_b,
+                    rip.co_occurrence_count,
+                    it1.total_likes as item_a_total_likes,
+                    it2.total_likes as item_b_total_likes,
+                    rip.co_occurrence_count::float / (it1.total_likes + it2.total_likes - rip.co_occurrence_count) as similarity_score
+                FROM recent_item_pairs rip
+                JOIN item_totals it1 ON rip.item_a = it1.item_id
+                JOIN item_totals it2 ON rip.item_b = it2.item_id
+                WHERE rip.co_occurrence_count::float / (it1.total_likes + it2.total_likes - rip.co_occurrence_count) >= 0.05
+                ORDER BY similarity_score DESC
+                LIMIT 5000
+            """
+            
+            similarities = await db.execute_main_query(similarity_query, item_ids)
+            
+            if similarities:
+                # Remove old similarities for these items
+                await db.execute_recommendations_command(
+                    "DELETE FROM item_similarities WHERE item_a = ANY($1::varchar[]) OR item_b = ANY($1::varchar[])", 
+                    item_ids
+                )
+                
+                # Insert new similarities in batches
+                insert_query = """
+                    INSERT INTO item_similarities 
+                    (item_a, item_b, similarity_score, co_occurrence_count, item_a_total_likes, item_b_total_likes, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                """
+                
+                inserted_count = 0
+                for sim in similarities:
+                    try:
+                        await db.execute_recommendations_command(
+                            insert_query,
+                            str(sim['item_a']),
+                            str(sim['item_b']),
+                            float(sim['similarity_score']),
+                            int(sim['co_occurrence_count']),
+                            int(sim['item_a_total_likes']),
+                            int(sim['item_b_total_likes'])
+                        )
+                        inserted_count += 1
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to insert similarity: {e}")
+                
+                logger.info(f"Updated {inserted_count} item similarities")
+            
+            computation_time = (time.time() - start_time) * 1000
+            logger.info(f"Item similarities updated successfully in {computation_time:.2f}ms")
+            
+        except Exception as e:
+            logger.error(f"Error updating item similarities: {e}")
+
+    @staticmethod
     async def cleanup_old_data():
         """Clean up old cache data"""
         try:
@@ -430,7 +529,7 @@ class JobScheduler:
         await asyncio.gather(
             self._popular_items_loop(),
             self._user_profiles_loop(),
-            self._user_similarities_loop(),
+            self._item_similarities_loop(),
             self._cleanup_loop()
         )
     
@@ -459,16 +558,17 @@ class JobScheduler:
                 logger.error(f"Error in user profiles loop: {e}")
                 await asyncio.sleep(60)
     
-    async def _user_similarities_loop(self):
-        """Run user similarities update every hour"""
+    
+    async def _item_similarities_loop(self):
+        """Run item similarities update every hour"""
         while self.running:
             try:
-                await BackgroundJobs.update_user_similarities()
+                await BackgroundJobs.update_item_similarities()
                 await asyncio.sleep(60 * 60)  # 1 hour
             except Exception as e:
-                logger.error(f"Error in user similarities loop: {e}")
+                logger.error(f"Error in item similarities loop: {e}")
                 await asyncio.sleep(60)
-    
+
     async def _cleanup_loop(self):
         """Run cleanup every 6 hours"""
         while self.running:

@@ -4,6 +4,7 @@ Recommends items based on item features and user preferences
 """
 
 import logging
+import json
 from typing import List, Tuple, Dict, Any, Optional
 from app.database import db
 from app.config import settings
@@ -58,6 +59,13 @@ class ContentBasedFilter:
             
             for interaction in interactions:
                 categories = interaction.get('categories', {})
+                # Parse JSON string to dict if needed
+                if isinstance(categories, str):
+                    try:
+                        categories = json.loads(categories)
+                    except (json.JSONDecodeError, TypeError):
+                        categories = {}
+                
                 price = interaction.get('price', 0)
                 platform = interaction.get('platform', '')
                 
@@ -116,6 +124,13 @@ class ContentBasedFilter:
         
         # Category matching (40% weight)
         categories = item.get('categories', {})
+        # Parse JSON string to dict if needed
+        if isinstance(categories, str):
+            try:
+                categories = json.loads(categories)
+            except (json.JSONDecodeError, TypeError):
+                categories = {}
+        
         category_prefs = user_profile.get('category_preferences', {})
         
         for cat_type, cat_value in categories.items():
@@ -267,6 +282,13 @@ class ContentBasedFilter:
             # Score similarity
             similar_items = []
             target_categories = target_item.get('categories', {})
+            # Parse JSON string to dict if needed
+            if isinstance(target_categories, str):
+                try:
+                    target_categories = json.loads(target_categories)
+                except (json.JSONDecodeError, TypeError):
+                    target_categories = {}
+            
             target_price = target_item.get('price', 0)
             target_platform = target_item.get('platform', '')
             
@@ -275,6 +297,12 @@ class ContentBasedFilter:
                 
                 # Category similarity (60% weight)
                 candidate_categories = candidate.get('categories', {})
+                # Parse JSON string to dict if needed
+                if isinstance(candidate_categories, str):
+                    try:
+                        candidate_categories = json.loads(candidate_categories)
+                    except (json.JSONDecodeError, TypeError):
+                        candidate_categories = {}
                 category_matches = 0
                 total_categories = len(set(target_categories.keys()) | set(candidate_categories.keys()))
                 
