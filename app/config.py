@@ -45,9 +45,9 @@ class Settings(BaseSettings):
         return self.app_env.lower() == "development"
     
     # Cache TTL settings (in seconds)
-    cache_ttl_popular: int = 900       # 15 minutes  
-    cache_ttl_personalized: int = 5     # 5 seconds (for testing)
-    cache_ttl_user_profile: int = 14400  # 4 hours
+    cache_ttl_popular: int = int(os.getenv("CACHE_TTL_POPULAR", "900"))          # 15 minutes default
+    cache_ttl_personalized: int = int(os.getenv("CACHE_TTL_PERSONALIZED", "5"))  # 5 seconds default
+    cache_ttl_user_profile: int = int(os.getenv("CACHE_TTL_USER_PROFILE", "14400"))  # 4 hours default
     
     # Cache key prefix (change to invalidate all caches)
     cache_key_prefix: str = "v3"
