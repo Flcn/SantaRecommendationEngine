@@ -87,9 +87,14 @@ class ContentBasedFilter:
         
         # Calculate average price
         if valid_prices > 0:
-            profile['price_range']['avg'] = total_price / valid_prices
+            profile['price_range']['avg'] = float(total_price / valid_prices)
         else:
             profile['price_range'] = {'min': 0, 'max': 0, 'avg': 0}
+        
+        # Convert Decimal to float for JSON serialization
+        if profile['price_range']['min'] != float('inf'):
+            profile['price_range']['min'] = float(profile['price_range']['min'])
+            profile['price_range']['max'] = float(profile['price_range']['max'])
         
         # Normalize preference counts to percentages
         total_category_prefs = sum(profile['category_preferences'].values())
@@ -205,7 +210,7 @@ class ContentBasedFilter:
             WHERE geo_id = $1
               AND status = 'in_stock'
               AND user_id IS NULL
-              AND ($2::int[] IS NULL OR id != ALL($2::int[]))
+              AND ($2::uuid[] IS NULL OR id != ALL($2::uuid[]))
             ORDER BY created_at DESC
             LIMIT $3
         """
