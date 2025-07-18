@@ -211,7 +211,7 @@ class RecommendationService:
         """
         
         try:
-            filtered_results = await db.execute_query(filter_query, *filter_params)
+            filtered_results = await db.execute_main_query(filter_query, *filter_params)
             return [row['id'] for row in filtered_results]
         except Exception as e:
             logger.error(f"Error applying filters: {e}")

@@ -37,7 +37,7 @@ class CollaborativeFilter:
                 ORDER BY created_at DESC 
                 LIMIT 20
             """
-            user_likes = await db.execute_query(user_likes_query, user_id)
+            user_likes = await db.execute_main_query(user_likes_query, user_id)
             
             if not user_likes:
                 return []
@@ -56,7 +56,7 @@ class CollaborativeFilter:
                 LIMIT $4
             """
             
-            similar_users = await db.execute_query(
+            similar_users = await db.execute_main_query(
                 similarity_query, 
                 liked_item_ids, 
                 user_id,
@@ -98,7 +98,7 @@ class CollaborativeFilter:
                 FROM handpicked_likes 
                 WHERE user_id = $1
             """
-            user_likes = await db.execute_query(user_likes_query, user_id)
+            user_likes = await db.execute_main_query(user_likes_query, user_id)
             excluded_items = [row['handpicked_present_id'] for row in user_likes]
             
             # Get items liked by similar users
@@ -119,7 +119,7 @@ class CollaborativeFilter:
                 LIMIT $4
             """
             
-            recommendations = await db.execute_query(
+            recommendations = await db.execute_main_query(
                 recommendations_query,
                 similar_users,
                 geo_id,
@@ -151,7 +151,7 @@ class CollaborativeFilter:
                 FROM handpicked_likes 
                 WHERE user_id = $1
             """
-            result = await db.execute_query_one(query, user_id)
+            result = await db.execute_main_query_one(query, user_id)
             return result['total'] if result else 0
         except Exception as e:
             logger.error(f"Error getting user interaction count: {e}")

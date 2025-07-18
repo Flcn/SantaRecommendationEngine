@@ -41,7 +41,7 @@ class ContentBasedFilter:
                 LIMIT 50  -- Limit to recent preferences
             """
             
-            interactions = await db.execute_query(profile_query, user_id)
+            interactions = await db.execute_main_query(profile_query, user_id)
             
             if not interactions:
                 return {}
@@ -196,7 +196,7 @@ class ContentBasedFilter:
                 FROM handpicked_likes 
                 WHERE user_id = $1
             """
-            user_likes = await db.execute_query(user_likes_query, user_id)
+            user_likes = await db.execute_main_query(user_likes_query, user_id)
             excluded_items = [row['handpicked_present_id'] for row in user_likes]
             
             # Get candidate items with their features
@@ -217,7 +217,7 @@ class ContentBasedFilter:
             """
             
             # Get more candidates than needed for scoring
-            candidate_items = await db.execute_query(
+            candidate_items = await db.execute_main_query(
                 items_query,
                 geo_id,
                 excluded_items if excluded_items else None,
@@ -261,7 +261,7 @@ class ContentBasedFilter:
                 FROM handpicked_presents
                 WHERE id = $1
             """
-            target_item = await db.execute_query_one(target_item_query, item_id)
+            target_item = await db.execute_main_query_one(target_item_query, item_id)
             
             if not target_item:
                 return []
@@ -277,7 +277,7 @@ class ContentBasedFilter:
                 LIMIT 200
             """
             
-            candidates = await db.execute_query(candidates_query, geo_id, item_id)
+            candidates = await db.execute_main_query(candidates_query, geo_id, item_id)
             
             # Score similarity
             similar_items = []
