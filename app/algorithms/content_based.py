@@ -26,91 +26,86 @@ class ContentBasedFilter:
         if cached_profile:
             return cached_profile
         
-        try:
-            # Get user's liked items and their features
-            profile_query = """
-                SELECT 
-                    hp.categories,
-                    hp.price,
-                    hp.platform,
-                    hl.created_at as interaction_date
-                FROM handpicked_likes hl
-                JOIN handpicked_presents hp ON hl.handpicked_present_id = hp.id
-                WHERE hl.user_id = $1
-                ORDER BY hl.created_at DESC
-                LIMIT 50  -- Limit to recent preferences
-            """
-            
-            interactions = await db.execute_main_query(profile_query, user_id)
-            
-            if not interactions:
-                return {}
-            
-            # Build preference profile
-            profile = {
-                'category_preferences': {},
-                'platform_preferences': {},
-                'price_range': {'min': float('inf'), 'max': 0, 'avg': 0},
-                'interaction_count': len(interactions)
-            }
-            
-            total_price = 0
-            valid_prices = 0
-            
-            for interaction in interactions:
-                categories = interaction.get('categories', {})
-                # Parse JSON string to dict if needed
-                if isinstance(categories, str):
-                    try:
-                        categories = json.loads(categories)
-                    except (json.JSONDecodeError, TypeError):
-                        categories = {}
-                
-                price = interaction.get('price', 0)
-                platform = interaction.get('platform', '')
-                
-                # Category preferences
-                for cat_type, cat_value in categories.items():
-                    if cat_value and cat_type != 'unknown':
-                        key = f"{cat_type}:{cat_value}"
-                        profile['category_preferences'][key] = profile['category_preferences'].get(key, 0) + 1
-                
-                # Platform preferences
-                if platform:
-                    profile['platform_preferences'][platform] = profile['platform_preferences'].get(platform, 0) + 1
-                
-                # Price preferences
-                if price and price > 0:
-                    profile['price_range']['min'] = min(profile['price_range']['min'], price)
-                    profile['price_range']['max'] = max(profile['price_range']['max'], price)
-                    total_price += price
-                    valid_prices += 1
-            
-            # Calculate average price
-            if valid_prices > 0:
-                profile['price_range']['avg'] = total_price / valid_prices
-            else:
-                profile['price_range'] = {'min': 0, 'max': 0, 'avg': 0}
-            
-            # Normalize preference counts to percentages
-            total_category_prefs = sum(profile['category_preferences'].values())
-            if total_category_prefs > 0:
-                for key in profile['category_preferences']:
-                    profile['category_preferences'][key] /= total_category_prefs
-            
-            total_platform_prefs = sum(profile['platform_preferences'].values())
-            if total_platform_prefs > 0:
-                for key in profile['platform_preferences']:
-                    profile['platform_preferences'][key] /= total_platform_prefs
-            
-            # Cache profile (longer TTL since preferences change slowly)
-            db.cache_set(cache_key, profile, settings.cache_ttl_similarity)
-            
-            return profile
-            
-        except Exception as e:
-            logger.error(f"Error building user profile for {user_id}: {e}")
+        # Get user's liked items and their features
+        profile_query = """
+            SELECT 
+                hp.categories,
+                hp.price,
+                hp.platform,
+                hl.created_at as interaction_date
+            FROM handpicked_likes hl
+            JOIN handpicked_presents hp ON hl.handpicked_present_id = hp.id
+            WHERE hl.user_id = $1
+            ORDER BY hl.created_at DESC
+            LIMIT 50  -- Limit to recent preferences
+        """
+        
+        interactions = await db.execute_main_query(profile_query, user_id)
+        
+        if not interactions:
             return {}
+        
+        # Build preference profile
+        profile = {
+            'category_preferences': {},
+            'platform_preferences': {},
+            'price_range': {'min': float('inf'), 'max': 0, 'avg': 0},
+            'interaction_count': len(interactions)
+        }
+        
+        total_price = 0
+        valid_prices = 0
+        
+        for interaction in interactions:
+            categories = interaction.get('categories', {})
+            # Parse JSON string to dict if needed
+            if isinstance(categories, str):
+                try:
+                    categories = json.loads(categories)
+                except (json.JSONDecodeError, TypeError):
+                    categories = {}
+            
+            price = interaction.get('price', 0)
+            platform = interaction.get('platform', '')
+            
+            # Category preferences
+            for cat_type, cat_value in categories.items():
+                if cat_value and cat_type != 'unknown':
+                    key = f"{cat_type}:{cat_value}"
+                    profile['category_preferences'][key] = profile['category_preferences'].get(key, 0) + 1
+            
+            # Platform preferences
+            if platform:
+                profile['platform_preferences'][platform] = profile['platform_preferences'].get(platform, 0) + 1
+            
+            # Price preferences
+            if price and price > 0:
+                profile['price_range']['min'] = min(profile['price_range']['min'], price)
+                profile['price_range']['max'] = max(profile['price_range']['max'], price)
+                total_price += price
+                valid_prices += 1
+        
+        # Calculate average price
+        if valid_prices > 0:
+            profile['price_range']['avg'] = total_price / valid_prices
+        else:
+            profile['price_range'] = {'min': 0, 'max': 0, 'avg': 0}
+        
+        # Normalize preference counts to percentages
+        total_category_prefs = sum(profile['category_preferences'].values())
+        if total_category_prefs > 0:
+            for key in profile['category_preferences']:
+                profile['category_preferences'][key] /= total_category_prefs
+        
+        total_platform_prefs = sum(profile['platform_preferences'].values())
+        if total_platform_prefs > 0:
+            for key in profile['platform_preferences']:
+                profile['platform_preferences'][key] /= total_platform_prefs
+        
+        # Cache profile (longer TTL since preferences change slowly)
+        db.cache_set(cache_key, profile, settings.cache_ttl_similarity)
+        
+        return profile
     
     @staticmethod
     def calculate_item_score(item: Dict[str, Any], user_profile: Dict[str, Any]) -> float:
@@ -183,61 +178,56 @@ class ContentBasedFilter:
         """
         Get content-based recommendations for user
         """
-        try:
-            # Get user profile
-            user_profile = await ContentBasedFilter.get_user_profile(user_id)
-            
-            if not user_profile:
-                return []
-            
-            # Get user's already liked items to exclude
-            user_likes_query = """
-                SELECT handpicked_present_id 
-                FROM handpicked_likes 
-                WHERE user_id = $1
-            """
-            user_likes = await db.execute_main_query(user_likes_query, user_id)
-            excluded_items = [row['handpicked_present_id'] for row in user_likes]
-            
-            # Get candidate items with their features
-            items_query = """
-                SELECT 
-                    id,
-                    categories,
-                    price,
-                    platform,
-                    created_at
-                FROM handpicked_presents
-                WHERE geo_id = $1
-                  AND status = 'in_stock'
-                  AND user_id IS NULL
-                  AND ($2::int[] IS NULL OR id != ALL($2::int[]))
-                ORDER BY created_at DESC
-                LIMIT $3
-            """
-            
-            # Get more candidates than needed for scoring
-            candidate_items = await db.execute_main_query(
-                items_query,
-                geo_id,
-                excluded_items if excluded_items else None,
-                limit * 3  # Get 3x items for scoring
-            )
-            
-            # Score each item
-            scored_items = []
-            for item in candidate_items:
-                score = ContentBasedFilter.calculate_item_score(item, user_profile)
-                if score > 0:  # Only include items with positive scores
-                    scored_items.append((item['id'], score))
-            
-            # Sort by score and return top items
-            scored_items.sort(key=lambda x: x[1], reverse=True)
-            return scored_items[:limit]
-            
-        except Exception as e:
-            logger.error(f"Error getting content recommendations for user {user_id}: {e}")
+        # Get user profile
+        user_profile = await ContentBasedFilter.get_user_profile(user_id)
+        
+        if not user_profile:
             return []
+        
+        # Get user's already liked items to exclude
+        user_likes_query = """
+            SELECT handpicked_present_id 
+            FROM handpicked_likes 
+            WHERE user_id = $1
+        """
+        user_likes = await db.execute_main_query(user_likes_query, user_id)
+        excluded_items = [row['handpicked_present_id'] for row in user_likes]
+        
+        # Get candidate items with their features
+        items_query = """
+            SELECT 
+                id,
+                categories,
+                price,
+                platform,
+                created_at
+            FROM handpicked_presents
+            WHERE geo_id = $1
+              AND status = 'in_stock'
+              AND user_id IS NULL
+              AND ($2::int[] IS NULL OR id != ALL($2::int[]))
+            ORDER BY created_at DESC
+            LIMIT $3
+        """
+        
+        # Get more candidates than needed for scoring
+        candidate_items = await db.execute_main_query(
+            items_query,
+            geo_id,
+            excluded_items if excluded_items else None,
+            limit * 3  # Get 3x items for scoring
+        )
+        
+        # Score each item
+        scored_items = []
+        for item in candidate_items:
+            score = ContentBasedFilter.calculate_item_score(item, user_profile)
+            if score > 0:  # Only include items with positive scores
+                scored_items.append((item['id'], score))
+        
+        # Sort by score and return top items
+        scored_items.sort(key=lambda x: x[1], reverse=True)
+        return scored_items[:limit]
     
     @staticmethod
     async def get_similar_items(
@@ -254,87 +244,82 @@ class ContentBasedFilter:
         if cached_result:
             return cached_result
         
-        try:
-            # Get target item features
-            target_item_query = """
-                SELECT categories, price, platform
-                FROM handpicked_presents
-                WHERE id = $1
-            """
-            target_item = await db.execute_main_query_one(target_item_query, item_id)
-            
-            if not target_item:
-                return []
-            
-            # Get candidate items in same geo
-            candidates_query = """
-                SELECT id, categories, price, platform
-                FROM handpicked_presents
-                WHERE geo_id = $1
-                  AND id != $2
-                  AND status = 'in_stock'
-                  AND user_id IS NULL
-                LIMIT 200
-            """
-            
-            candidates = await db.execute_main_query(candidates_query, geo_id, item_id)
-            
-            # Score similarity
-            similar_items = []
-            target_categories = target_item.get('categories', {})
-            # Parse JSON string to dict if needed
-            if isinstance(target_categories, str):
-                try:
-                    target_categories = json.loads(target_categories)
-                except (json.JSONDecodeError, TypeError):
-                    target_categories = {}
-            
-            target_price = target_item.get('price', 0)
-            target_platform = target_item.get('platform', '')
-            
-            for candidate in candidates:
-                score = 0.0
-                
-                # Category similarity (60% weight)
-                candidate_categories = candidate.get('categories', {})
-                # Parse JSON string to dict if needed
-                if isinstance(candidate_categories, str):
-                    try:
-                        candidate_categories = json.loads(candidate_categories)
-                    except (json.JSONDecodeError, TypeError):
-                        candidate_categories = {}
-                category_matches = 0
-                total_categories = len(set(target_categories.keys()) | set(candidate_categories.keys()))
-                
-                if total_categories > 0:
-                    for key in target_categories:
-                        if key in candidate_categories and target_categories[key] == candidate_categories[key]:
-                            category_matches += 1
-                    score += 0.6 * (category_matches / total_categories)
-                
-                # Price similarity (25% weight)
-                candidate_price = candidate.get('price', 0)
-                if target_price > 0 and candidate_price > 0:
-                    price_diff = abs(candidate_price - target_price) / target_price
-                    price_similarity = max(0, 1 - price_diff)
-                    score += 0.25 * price_similarity
-                
-                # Platform similarity (15% weight)
-                if target_platform == candidate.get('platform', ''):
-                    score += 0.15
-                
-                if score > 0.3:  # Only include reasonably similar items
-                    similar_items.append((candidate['id'], score))
-            
-            # Sort and limit
-            similar_items.sort(key=lambda x: x[1], reverse=True)
-            result = similar_items[:limit]
-            
-            # Cache result
-            db.cache_set(cache_key, result, settings.cache_ttl_recommendations)
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error finding similar items for {item_id}: {e}")
+        # Get target item features
+        target_item_query = """
+            SELECT categories, price, platform
+            FROM handpicked_presents
+            WHERE id = $1
+        """
+        target_item = await db.execute_main_query_one(target_item_query, item_id)
+        
+        if not target_item:
             return []
+        
+        # Get candidate items in same geo
+        candidates_query = """
+            SELECT id, categories, price, platform
+            FROM handpicked_presents
+            WHERE geo_id = $1
+              AND id != $2
+              AND status = 'in_stock'
+              AND user_id IS NULL
+            LIMIT 200
+        """
+        
+        candidates = await db.execute_main_query(candidates_query, geo_id, item_id)
+        
+        # Score similarity
+        similar_items = []
+        target_categories = target_item.get('categories', {})
+        # Parse JSON string to dict if needed
+        if isinstance(target_categories, str):
+            try:
+                target_categories = json.loads(target_categories)
+            except (json.JSONDecodeError, TypeError):
+                target_categories = {}
+        
+        target_price = target_item.get('price', 0)
+        target_platform = target_item.get('platform', '')
+        
+        for candidate in candidates:
+            score = 0.0
+            
+            # Category similarity (60% weight)
+            candidate_categories = candidate.get('categories', {})
+            # Parse JSON string to dict if needed
+            if isinstance(candidate_categories, str):
+                try:
+                    candidate_categories = json.loads(candidate_categories)
+                except (json.JSONDecodeError, TypeError):
+                    candidate_categories = {}
+            category_matches = 0
+            total_categories = len(set(target_categories.keys()) | set(candidate_categories.keys()))
+            
+            if total_categories > 0:
+                for key in target_categories:
+                    if key in candidate_categories and target_categories[key] == candidate_categories[key]:
+                        category_matches += 1
+                score += 0.6 * (category_matches / total_categories)
+            
+            # Price similarity (25% weight)
+            candidate_price = candidate.get('price', 0)
+            if target_price > 0 and candidate_price > 0:
+                price_diff = abs(candidate_price - target_price) / target_price
+                price_similarity = max(0, 1 - price_diff)
+                score += 0.25 * price_similarity
+            
+            # Platform similarity (15% weight)
+            if target_platform == candidate.get('platform', ''):
+                score += 0.15
+            
+            if score > 0.3:  # Only include reasonably similar items
+                similar_items.append((candidate['id'], score))
+        
+        # Sort and limit
+        similar_items.sort(key=lambda x: x[1], reverse=True)
+        result = similar_items[:limit]
+        
+        # Cache result
+        db.cache_set(cache_key, result, settings.cache_ttl_recommendations)
+        
+        return result
