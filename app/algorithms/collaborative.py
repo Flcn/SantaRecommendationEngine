@@ -66,7 +66,7 @@ class CollaborativeFilter:
         result = [row['user_id'] for row in similar_users]
         
         # Cache result
-        db.cache_set(cache_key, result, settings.cache_ttl_similarity)
+        db.cache_set(cache_key, result, settings.cache_ttl_user_profile)
         
         return result
     

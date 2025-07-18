@@ -103,7 +103,7 @@ class ContentBasedFilter:
                 profile['platform_preferences'][key] /= total_platform_prefs
         
         # Cache profile (longer TTL since preferences change slowly)
-        db.cache_set(cache_key, profile, settings.cache_ttl_similarity)
+        db.cache_set(cache_key, profile, settings.cache_ttl_user_profile)
         
         return profile
     
@@ -320,6 +320,6 @@ class ContentBasedFilter:
         result = similar_items[:limit]
         
         # Cache result
-        db.cache_set(cache_key, result, settings.cache_ttl_recommendations)
+        db.cache_set(cache_key, result, settings.cache_ttl_personalized)
         
         return result
