@@ -5,13 +5,10 @@ FastAPI application for MySanta recommendation service
 import logging
 import asyncio
 import secrets
-import time
-import json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.database import db
 from app.models import (
