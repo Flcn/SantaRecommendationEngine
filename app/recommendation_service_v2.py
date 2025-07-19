@@ -485,7 +485,7 @@ class RecommendationServiceV2:
         """
         from app.algorithms.content_based import ContentBasedFilter
         
-        # Get candidate items from main database
+        # Get candidate items from main database - pre-filter for stock status
         candidate_items_query = """
             SELECT 
                 id::text as item_id,
@@ -499,7 +499,7 @@ class RecommendationServiceV2:
               AND user_id IS NULL
               AND ($2::text[] IS NULL OR id::text != ALL($2::text[]))
             ORDER BY created_at DESC
-            LIMIT 200
+            LIMIT 500
         """
         
         candidate_items = await db.execute_main_query(
@@ -525,7 +525,7 @@ class RecommendationServiceV2:
         scored_items = []
         for item in candidate_items:
             score = ContentBasedFilter.calculate_item_score(dict(item), user_profile_dict)
-            if score > 0.1:  # Only include items with reasonable scores
+            if score > 0.05:  # Lowered threshold to include more items
                 scored_items.append((item['item_id'], score))
         
         # Sort by score and return top items
@@ -644,7 +644,8 @@ class RecommendationServiceV2:
             return item_ids
         
         # Build filter conditions - cast UUIDs properly
-        filter_conditions = ["hp.id::text = ANY($1::text[])", "hp.geo_id = $2", "hp.status = 'in_stock'"]
+        # Note: stock status already filtered in candidate selection
+        filter_conditions = ["hp.id::text = ANY($1::text[])", "hp.geo_id = $2"]
         filter_params = [item_ids, geo_id]
         param_count = 2
         
