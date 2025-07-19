@@ -80,13 +80,17 @@ class SimilarUsersRequest(BaseModel):
 
 
 class UserProfile(BaseModel):
-    """User profile for recommendations"""
+    """User profile for recommendations (Option 3 Hybrid Approach)"""
     user_id: str = Field(..., description="User ID (UUID string)")
-    preferred_categories: Dict[str, float] = Field(default_factory=dict)
+    preferred_categories: Dict[str, float] = Field(default_factory=dict, description="What they like")
     preferred_platforms: Dict[str, float] = Field(default_factory=dict)
     avg_price: Optional[float] = None
     price_range_min: Optional[float] = None 
     price_range_max: Optional[float] = None
+    # Buying patterns (Option 3): who they buy gifts for
+    buying_patterns_target_ages: Dict[str, float] = Field(default_factory=dict, description="Ages they buy for")
+    buying_patterns_relationships: Dict[str, float] = Field(default_factory=dict, description="Who they buy for")
+    buying_patterns_gender_targets: Dict[str, float] = Field(default_factory=dict, description="Gender they buy for")
     interaction_count: int = 0
     last_interaction_at: Optional[str] = None
 

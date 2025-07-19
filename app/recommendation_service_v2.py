@@ -292,10 +292,12 @@ class RecommendationServiceV2:
     
     @staticmethod
     async def _get_user_profile(user_id: str) -> Optional[UserProfile]:
-        """Get user profile from recommendations database"""
+        """Get user profile from recommendations database (Option 3: with buying patterns)"""
         query = """
             SELECT user_id, preferred_categories, preferred_platforms, 
                    avg_price, price_range_min, price_range_max,
+                   buying_patterns_target_ages, buying_patterns_relationships, 
+                   buying_patterns_gender_targets,
                    interaction_count, last_interaction_at
             FROM user_profiles
             WHERE user_id = $1
@@ -307,11 +309,20 @@ class RecommendationServiceV2:
             # Parse JSON strings to dictionaries
             preferred_categories = result['preferred_categories'] or '{}'
             preferred_platforms = result['preferred_platforms'] or '{}'
+            buying_patterns_target_ages = result['buying_patterns_target_ages'] or '{}'
+            buying_patterns_relationships = result['buying_patterns_relationships'] or '{}'
+            buying_patterns_gender_targets = result['buying_patterns_gender_targets'] or '{}'
             
             if isinstance(preferred_categories, str):
                 preferred_categories = json.loads(preferred_categories)
             if isinstance(preferred_platforms, str):
                 preferred_platforms = json.loads(preferred_platforms)
+            if isinstance(buying_patterns_target_ages, str):
+                buying_patterns_target_ages = json.loads(buying_patterns_target_ages)
+            if isinstance(buying_patterns_relationships, str):
+                buying_patterns_relationships = json.loads(buying_patterns_relationships)
+            if isinstance(buying_patterns_gender_targets, str):
+                buying_patterns_gender_targets = json.loads(buying_patterns_gender_targets)
             
             return UserProfile(
                 user_id=result['user_id'],
@@ -320,6 +331,9 @@ class RecommendationServiceV2:
                 avg_price=result['avg_price'],
                 price_range_min=result['price_range_min'],
                 price_range_max=result['price_range_max'],
+                buying_patterns_target_ages=buying_patterns_target_ages,
+                buying_patterns_relationships=buying_patterns_relationships,
+                buying_patterns_gender_targets=buying_patterns_gender_targets,
                 interaction_count=result['interaction_count'],
                 last_interaction_at=str(result['last_interaction_at']) if result['last_interaction_at'] else None
             )
@@ -465,27 +479,58 @@ class RecommendationServiceV2:
         user_likes: List[str],
         user_profile: UserProfile
     ) -> List[str]:
-        """Get content-based recommendations using user profile"""
-        # Simple content-based: get popular items in user's preferred categories
-        preferred_categories = list(user_profile.preferred_categories.keys())[:3]  # Top 3 categories
+        """
+        Get content-based recommendations using Option 3 Hybrid Approach
+        Combines category preferences + buying patterns for better targeting
+        """
+        from app.algorithms.content_based import ContentBasedFilter
         
-        if not preferred_categories:
-            return await RecommendationServiceV2._get_fallback_popular_items(geo_id, user_likes, user_id)
-        
-        query = """
-            SELECT item_id
-            FROM popular_items
+        # Get candidate items from main database
+        candidate_items_query = """
+            SELECT 
+                id::text as item_id,
+                categories,
+                price,
+                platform,
+                created_at
+            FROM handpicked_presents
             WHERE geo_id = $1
-              AND category = ANY($2::text[])
-            ORDER BY popularity_score DESC
-            LIMIT 100
+              AND status = 'in_stock'
+              AND user_id IS NULL
+              AND ($2::text[] IS NULL OR id::text != ALL($2::text[]))
+            ORDER BY created_at DESC
+            LIMIT 200
         """
         
-        results = await db.execute_recommendations_query(
-            query, geo_id, preferred_categories
+        candidate_items = await db.execute_main_query(
+            candidate_items_query,
+            geo_id,
+            user_likes if user_likes else None
         )
         
-        return [row['item_id'] for row in results]
+        if not candidate_items:
+            return await RecommendationServiceV2._get_fallback_popular_items(geo_id, user_likes, user_id)
+        
+        # Convert UserProfile to dict format for ContentBasedFilter
+        user_profile_dict = {
+            'category_preferences': user_profile.preferred_categories,
+            'platform_preferences': user_profile.preferred_platforms,
+            'avg_price': user_profile.avg_price,
+            'buying_patterns_target_ages': user_profile.buying_patterns_target_ages,
+            'buying_patterns_relationships': user_profile.buying_patterns_relationships,
+            'buying_patterns_gender_targets': user_profile.buying_patterns_gender_targets
+        }
+        
+        # Score each item using Option 3 hybrid algorithm
+        scored_items = []
+        for item in candidate_items:
+            score = ContentBasedFilter.calculate_item_score(dict(item), user_profile_dict)
+            if score > 0.1:  # Only include items with reasonable scores
+                scored_items.append((item['item_id'], score))
+        
+        # Sort by score and return top items
+        scored_items.sort(key=lambda x: x[1], reverse=True)
+        return [item_id for item_id, score in scored_items[:100]]
     
     @staticmethod
     async def _get_fallback_popular_items(geo_id: int, user_likes: List[str], user_id: str = None) -> List[str]:

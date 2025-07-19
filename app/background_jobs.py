@@ -201,6 +201,11 @@ class BackgroundJobs:
             profile = {
                 'category_preferences': {},
                 'platform_preferences': {},
+                'buying_patterns': {
+                    'target_ages': {},
+                    'relationships': {},
+                    'gender_targets': {}
+                },
                 'price_range': {'min': float('inf'), 'max': 0, 'avg': 0},
                 'interaction_count': len(interactions)
             }
@@ -223,11 +228,23 @@ class BackgroundJobs:
                 elif categories is None:
                     categories = {}
                 
-                # Category preferences
-                for cat_type, cat_value in categories.items():
-                    if cat_value and cat_type != 'unknown':
-                        key = f"{cat_type}:{cat_value}"
-                        profile['category_preferences'][key] = profile['category_preferences'].get(key, 0) + 1
+                # Extract product category preferences (what they like)
+                product_category = categories.get('category')
+                if product_category and product_category != 'unknown':
+                    profile['category_preferences'][product_category] = profile['category_preferences'].get(product_category, 0) + 1
+                
+                # Extract buying patterns (who they buy for)
+                target_age = categories.get('age')
+                if target_age and target_age != 'unknown':
+                    profile['buying_patterns']['target_ages'][target_age] = profile['buying_patterns']['target_ages'].get(target_age, 0) + 1
+                
+                suitable_for = categories.get('suitable_for')
+                if suitable_for and suitable_for != 'unknown':
+                    profile['buying_patterns']['relationships'][suitable_for] = profile['buying_patterns']['relationships'].get(suitable_for, 0) + 1
+                
+                gender_target = categories.get('gender')
+                if gender_target and gender_target != 'unknown':
+                    profile['buying_patterns']['gender_targets'][gender_target] = profile['buying_patterns']['gender_targets'].get(gender_target, 0) + 1
                 
                 # Platform preferences
                 if platform:
@@ -260,18 +277,23 @@ class BackgroundJobs:
             # Get latest interaction timestamp
             latest_interaction = interactions[0]['interaction_date'] if interactions else None
             
-            # Upsert user profile to recommendations DB
+            # Upsert user profile to recommendations DB (Option 3: with buying patterns)
             upsert_query = """
                 INSERT INTO user_profiles 
                 (user_id, preferred_categories, preferred_platforms, avg_price, 
-                 price_range_min, price_range_max, interaction_count, last_interaction_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                 price_range_min, price_range_max, buying_patterns_target_ages, 
+                 buying_patterns_relationships, buying_patterns_gender_targets,
+                 interaction_count, last_interaction_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
                 ON CONFLICT (user_id) DO UPDATE SET
                     preferred_categories = EXCLUDED.preferred_categories,
                     preferred_platforms = EXCLUDED.preferred_platforms,
                     avg_price = EXCLUDED.avg_price,
                     price_range_min = EXCLUDED.price_range_min,
                     price_range_max = EXCLUDED.price_range_max,
+                    buying_patterns_target_ages = EXCLUDED.buying_patterns_target_ages,
+                    buying_patterns_relationships = EXCLUDED.buying_patterns_relationships,
+                    buying_patterns_gender_targets = EXCLUDED.buying_patterns_gender_targets,
                     interaction_count = EXCLUDED.interaction_count,
                     last_interaction_at = EXCLUDED.last_interaction_at,
                     updated_at = EXCLUDED.updated_at
@@ -285,6 +307,9 @@ class BackgroundJobs:
                 profile['price_range']['avg'],
                 profile['price_range']['min'] if profile['price_range']['min'] != float('inf') else None,
                 profile['price_range']['max'],
+                json.dumps(profile['buying_patterns']['target_ages']),  # Option 3
+                json.dumps(profile['buying_patterns']['relationships']),  # Option 3
+                json.dumps(profile['buying_patterns']['gender_targets']),  # Option 3
                 profile['interaction_count'],
                 latest_interaction
             )

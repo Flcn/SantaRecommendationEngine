@@ -116,47 +116,70 @@ class ContentBasedFilter:
     def calculate_item_score(item: Dict[str, Any], user_profile: Dict[str, Any]) -> float:
         """
         Calculate content-based similarity score between item and user profile
+        Option 3 Hybrid Approach: category preferences + buying patterns
         """
         if not user_profile:
             return 0.0
         
         score = 0.0
         
-        # Category matching (40% weight)
+        # Parse item categories
         categories = item.get('categories', {})
-        # Parse JSON string to dict if needed
         if isinstance(categories, str):
             try:
                 categories = json.loads(categories)
             except (json.JSONDecodeError, TypeError):
                 categories = {}
         
+        # 1. Product Category Matching (30% weight) - what they like
         category_prefs = user_profile.get('category_preferences', {})
+        product_category = categories.get('category')
+        if product_category and product_category != 'unknown':
+            key = f"category:{product_category}"
+            if key in category_prefs:
+                score += 0.3 * category_prefs[key]
         
-        for cat_type, cat_value in categories.items():
-            if cat_value and cat_type != 'unknown':
-                key = f"{cat_type}:{cat_value}"
-                if key in category_prefs:
-                    score += 0.4 * category_prefs[key]
+        # 2. Buying Patterns Matching (40% weight) - who they buy for
+        # Target age matching (15% weight)
+        target_ages_prefs = user_profile.get('buying_patterns_target_ages', {})
+        item_target_age = categories.get('age')
+        if item_target_age and item_target_age != 'unknown' and target_ages_prefs:
+            if item_target_age in target_ages_prefs:
+                score += 0.15 * target_ages_prefs[item_target_age]
         
-        # Platform preference (20% weight)
+        # Relationship type matching (15% weight)
+        relationships_prefs = user_profile.get('buying_patterns_relationships', {})
+        item_suitable_for = categories.get('suitable_for')
+        if item_suitable_for and item_suitable_for != 'unknown' and relationships_prefs:
+            if item_suitable_for in relationships_prefs:
+                score += 0.15 * relationships_prefs[item_suitable_for]
+        
+        # Gender target matching (10% weight)
+        gender_targets_prefs = user_profile.get('buying_patterns_gender_targets', {})
+        item_gender_target = categories.get('gender')
+        if item_gender_target and item_gender_target != 'unknown' and gender_targets_prefs:
+            if item_gender_target in gender_targets_prefs:
+                score += 0.1 * gender_targets_prefs[item_gender_target]
+            elif 'any' in gender_targets_prefs:  # Fallback to 'any' gender
+                score += 0.05 * gender_targets_prefs['any']
+        
+        # 3. Platform preference (15% weight)
         platform = item.get('platform', '')
         platform_prefs = user_profile.get('platform_preferences', {})
         if platform in platform_prefs:
-            score += 0.2 * platform_prefs[platform]
+            score += 0.15 * platform_prefs[platform]
         
-        # Price similarity (30% weight)
+        # 4. Price similarity (10% weight) - reduced from 30%
         item_price = item.get('price', 0)
-        price_range = user_profile.get('price_range', {})
-        avg_price = price_range.get('avg', 0)
+        avg_price = user_profile.get('avg_price', 0)
         
-        if avg_price > 0 and item_price > 0:
+        if avg_price and avg_price > 0 and item_price > 0:
             # Calculate price similarity (closer to average = higher score)
             price_diff = abs(item_price - avg_price) / avg_price
             price_similarity = max(0, 1 - price_diff)  # 0 to 1 scale
-            score += 0.3 * price_similarity
+            score += 0.1 * price_similarity
         
-        # Recency bonus (10% weight) - newer items get slight boost
+        # 5. Recency bonus (5% weight) - reduced from 10%
         try:
             from datetime import datetime, timezone
             created_at = item.get('created_at')
@@ -168,7 +191,7 @@ class ContentBasedFilter:
                     
                 days_old = (datetime.now(timezone.utc) - created_date).days
                 recency_score = max(0, 1 - (days_old / 365))  # Decay over a year
-                score += 0.1 * recency_score
+                score += 0.05 * recency_score
         except Exception:
             pass  # Skip recency scoring if date parsing fails
         

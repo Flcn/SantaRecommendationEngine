@@ -39,13 +39,18 @@ CREATE INDEX idx_user_similarities_lookup ON user_similarities(user_id, similari
 CREATE INDEX idx_user_similarities_updated ON user_similarities(updated_at);
 
 -- User profiles cache (refreshed when user gets new likes)
+-- Option 3 Hybrid Approach: category preferences + buying patterns
 CREATE TABLE user_profiles (
     user_id VARCHAR(36) PRIMARY KEY,  -- UUID as string
-    preferred_categories JSONB,
+    preferred_categories JSONB,  -- What they like: {"beauty": 0.6, "books": 0.4}
     preferred_platforms JSONB,
     avg_price DECIMAL(10,2),
     price_range_min DECIMAL(10,2),
     price_range_max DECIMAL(10,2),
+    -- Buying patterns (Option 3): who they buy gifts for
+    buying_patterns_target_ages JSONB DEFAULT '{}',  -- {"18-24": 0.3, "25-34": 0.7}
+    buying_patterns_relationships JSONB DEFAULT '{}',  -- {"friend": 0.6, "relative": 0.4}
+    buying_patterns_gender_targets JSONB DEFAULT '{}',  -- {"f": 0.8, "any": 0.2}
     interaction_count INTEGER DEFAULT 0,
     last_interaction_at TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -55,6 +60,10 @@ CREATE TABLE user_profiles (
 -- Indexes for user profile lookups
 CREATE INDEX idx_user_profiles_updated ON user_profiles(updated_at);
 CREATE INDEX idx_user_profiles_interaction_count ON user_profiles(interaction_count DESC);
+-- Indexes for buying patterns (Option 3)
+CREATE INDEX idx_user_profiles_target_ages ON user_profiles USING GIN (buying_patterns_target_ages);
+CREATE INDEX idx_user_profiles_relationships ON user_profiles USING GIN (buying_patterns_relationships);
+CREATE INDEX idx_user_profiles_gender_targets ON user_profiles USING GIN (buying_patterns_gender_targets);
 
 -- Item-to-item similarity matrix (NEW for item-based collaborative filtering)
 CREATE TABLE item_similarities (

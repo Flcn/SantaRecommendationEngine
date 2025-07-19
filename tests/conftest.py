@@ -73,7 +73,7 @@ def sample_personalized_request():
 
 @pytest.fixture
 def sample_user_profile():
-    """Sample user profile"""
+    """Sample user profile with Option 3 buying patterns"""
     return UserProfile(
         user_id="123",
         preferred_categories={"category:electronics": 0.6, "category:books": 0.4},
@@ -81,6 +81,10 @@ def sample_user_profile():
         avg_price=1500.0,
         price_range_min=200.0,
         price_range_max=5000.0,
+        # Option 3: buying patterns
+        buying_patterns_target_ages={"18-24": 0.3, "25-34": 0.7},
+        buying_patterns_relationships={"friend": 0.6, "relative": 0.4},
+        buying_patterns_gender_targets={"f": 0.8, "any": 0.2},
         interaction_count=5
     )
 
@@ -178,16 +182,19 @@ async def seed_test_data(conn):
         popular_items_data
     )
     
-    # Insert sample user profiles
+    # Insert sample user profiles (Option 3: with buying patterns)
     user_profiles_data = [
-        ('123', '{"category:electronics": 0.6, "category:books": 0.4}', '{"ozon": 0.7, "wildberries": 0.3}', 1500.0, 200.0, 5000.0, 5),
-        ('456', '{"category:sports": 0.8, "category:music": 0.2}', '{"ozon": 0.5, "amazon": 0.5}', 800.0, 100.0, 2000.0, 3),
+        ('123', '{"category:electronics": 0.6, "category:books": 0.4}', '{"ozon": 0.7, "wildberries": 0.3}', 1500.0, 200.0, 5000.0, 
+         '{"18-24": 0.3, "25-34": 0.7}', '{"friend": 0.6, "relative": 0.4}', '{"f": 0.8, "any": 0.2}', 5),
+        ('456', '{"category:sports": 0.8, "category:music": 0.2}', '{"ozon": 0.5, "amazon": 0.5}', 800.0, 100.0, 2000.0,
+         '{"25-34": 0.5, "35-44": 0.5}', '{"friend": 0.8, "colleague": 0.2}', '{"m": 0.6, "any": 0.4}', 3),
     ]
     
     await conn.executemany(
         """
-        INSERT INTO user_profiles (user_id, preferred_categories, preferred_platforms, avg_price, price_range_min, price_range_max, interaction_count)
-        VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6, $7)
+        INSERT INTO user_profiles (user_id, preferred_categories, preferred_platforms, avg_price, price_range_min, price_range_max, 
+                                   buying_patterns_target_ages, buying_patterns_relationships, buying_patterns_gender_targets, interaction_count)
+        VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10)
         """,
         user_profiles_data
     )
