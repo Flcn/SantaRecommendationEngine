@@ -318,3 +318,93 @@ class TestPersonalizedRecommendations:
             result = await RecommendationServiceV2._get_user_profile(123)
         
         assert result is None
+    
+    @pytest.mark.asyncio
+    async def test_decimal_float_conversion_in_user_profile(self, mock_db):
+        """Test that Decimal types from PostgreSQL are properly converted to float"""
+        from decimal import Decimal
+        
+        # Mock database result with Decimal types (simulating PostgreSQL)
+        profile_data = {
+            'user_id': "123",
+            'preferred_categories': {"category:electronics": 0.6},
+            'preferred_platforms': {"ozon": 0.7},
+            'avg_price': Decimal('1500.50'),  # Decimal from PostgreSQL
+            'price_range_min': Decimal('200.00'),  # Decimal from PostgreSQL
+            'price_range_max': Decimal('5000.75'),  # Decimal from PostgreSQL
+            'buying_patterns_target_ages': {"18-24": 0.3, "25-34": 0.7},
+            'buying_patterns_relationships': {"friend": 0.6, "relative": 0.4},
+            'buying_patterns_gender_targets': {"f": 0.8, "any": 0.2},
+            'interaction_count': 5,
+            'last_interaction_at': None
+        }
+        mock_db.execute_recommendations_query_one.return_value = profile_data
+        
+        with patch('app.recommendation_service_v2.db', mock_db):
+            result = await RecommendationServiceV2._get_user_profile("123")
+        
+        # Verify that Decimal values are converted to float
+        assert isinstance(result.avg_price, float)
+        assert isinstance(result.price_range_min, float)
+        assert isinstance(result.price_range_max, float)
+        assert result.avg_price == 1500.5
+        assert result.price_range_min == 200.0
+        assert result.price_range_max == 5000.75
+    
+    @pytest.mark.asyncio
+    async def test_content_based_with_decimal_prices(self, mock_db, sample_user_profile, sample_user_likes):
+        """Test content-based filtering with Decimal prices from database"""
+        from decimal import Decimal
+        
+        mock_db.cache_get.return_value = None
+        
+        # Setup user with limited interactions for content-based filtering
+        user_profile = sample_user_profile.model_copy()
+        user_profile.interaction_count = 2
+        
+        mock_db.execute_main_query.return_value = sample_user_likes
+        mock_db.execute_recommendations_query_one.return_value = {
+            'user_id': '123',
+            'preferred_categories': user_profile.preferred_categories,
+            'preferred_platforms': user_profile.preferred_platforms,
+            'avg_price': Decimal('1500.00'),  # Decimal from PostgreSQL
+            'price_range_min': Decimal('200.00'),
+            'price_range_max': Decimal('5000.00'),
+            'buying_patterns_target_ages': user_profile.buying_patterns_target_ages,
+            'buying_patterns_relationships': user_profile.buying_patterns_relationships,
+            'buying_patterns_gender_targets': user_profile.buying_patterns_gender_targets,
+            'interaction_count': 2,
+            'last_interaction_at': None
+        }
+        
+        # Mock candidate items with Decimal prices (as they come from PostgreSQL)
+        candidate_items = [
+            {
+                "item_id": "601",
+                "categories": '{"category": "electronics", "age": "25-34", "suitable_for": "friend", "gender": "f"}',
+                "platform": "ozon",
+                "price": Decimal('1400.50'),  # Decimal from PostgreSQL
+                "created_at": "2024-01-01T00:00:00Z"
+            },
+            {
+                "item_id": "602",
+                "categories": '{"category": "books", "age": "18-24", "suitable_for": "relative", "gender": "any"}',
+                "platform": "wildberries", 
+                "price": Decimal('800.25'),  # Decimal from PostgreSQL
+                "created_at": "2024-01-01T00:00:00Z"
+            }
+        ]
+        mock_db.execute_main_query.side_effect = [
+            sample_user_likes,  # User likes query
+            candidate_items     # Candidate items for content-based scoring
+        ]
+        
+        with patch('app.recommendation_service_v2.db', mock_db):
+            # This should not raise a Decimal/float arithmetic error
+            response = await RecommendationServiceV2._get_content_based_recommendations(
+                "123", 213, sample_user_likes, user_profile
+            )
+        
+        # Should successfully return recommendations without errors
+        assert isinstance(response, list)
+        assert len(response) >= 0  # May be empty if scores too low, but shouldn't crash

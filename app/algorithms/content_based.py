@@ -170,8 +170,8 @@ class ContentBasedFilter:
             score += 0.15 * platform_prefs[platform]
         
         # 4. Price similarity (10% weight) - reduced from 30%
-        item_price = item.get('price', 0)
-        avg_price = user_profile.get('avg_price', 0)
+        item_price = float(item.get('price', 0)) if item.get('price') else 0.0
+        avg_price = float(user_profile.get('avg_price', 0)) if user_profile.get('avg_price') else 0.0
         
         if avg_price and avg_price > 0 and item_price > 0:
             # Calculate price similarity (closer to average = higher score)
@@ -330,7 +330,7 @@ class ContentBasedFilter:
                 score += 0.6 * (category_matches / total_categories)
             
             # Price similarity (25% weight)
-            candidate_price = candidate.get('price', 0)
+            candidate_price = float(candidate.get('price', 0)) if candidate.get('price') else 0.0
             if target_price > 0 and candidate_price > 0:
                 price_diff = abs(candidate_price - target_price) / target_price
                 price_similarity = max(0, 1 - price_diff)
