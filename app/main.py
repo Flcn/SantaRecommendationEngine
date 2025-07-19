@@ -122,7 +122,7 @@ async def get_popular_items(request: PopularItemsRequest, username: str = Depend
     try:
         logger.info(f"Getting popular items for geo {request.user_params.geo_id}, "
                    f"demographics: {request.user_params.gender}/{request.user_params.age}, "
-                   f"page: {request.pagination.page}")
+                   f"page: {request.pagination.page}, limit: {request.pagination.limit}")
         logger.info(f"Popular items request parameters: {request.dict()}")
         
         response = await RecommendationServiceV2.get_popular_items(request)
@@ -156,7 +156,7 @@ async def get_personalized_recommendations(request: PersonalizedRequest, usernam
     """
     try:
         logger.info(f"Getting personalized recommendations for user {request.user_id}, "
-                   f"geo {request.geo_id}, page: {request.pagination.page}")
+                   f"geo {request.geo_id}, page: {request.pagination.page}, limit: {request.pagination.limit}")
         logger.info(f"Personalized request parameters: {request.dict()}")
         
         response = await RecommendationServiceV2.get_personalized_recommendations(request)
