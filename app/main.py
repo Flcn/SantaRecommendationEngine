@@ -323,6 +323,36 @@ async def manual_update_user_profiles():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/user-profile/{user_id}/refresh")
+async def refresh_user_profile(user_id: str, username: str = Depends(verify_credentials)):
+    """
+    Refresh user profile after interaction changes
+    
+    Triggered by Rails after user likes/dislikes items to immediately update
+    the user's profile for better algorithm selection and recommendations.
+    
+    This enables real-time switching from popular_fallback to content-based
+    or collaborative filtering based on user's current interaction count.
+    """
+    try:
+        logger.info(f"Refreshing profile for user {user_id}")
+        
+        from app.background_jobs import BackgroundJobs
+        await BackgroundJobs._update_single_user_profile(user_id)
+        
+        logger.info(f"Successfully refreshed profile for user {user_id}")
+        
+        return {
+            "status": "success",
+            "message": f"User {user_id} profile refreshed successfully",
+            "user_id": user_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error refreshing profile for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.put("/user-profile/{user_id}")
 async def sync_user_profile(
     user_id: str, 
