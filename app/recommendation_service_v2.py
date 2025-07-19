@@ -614,15 +614,32 @@ class RecommendationServiceV2:
                 
                 # Skip category filtering for now (let all categories through)
                 
+                # Get popular items but filter for in_stock status via main DB
                 query = f"""
-                    SELECT item_id
-                    FROM popular_items
+                    SELECT pi.item_id
+                    FROM popular_items pi
                     WHERE {' AND '.join(where_conditions)}
-                    ORDER BY popularity_score DESC
+                    ORDER BY pi.popularity_score DESC
                     LIMIT 100
                 """
                 
-                results = await db.execute_recommendations_query(query, *params)
+                popular_results = await db.execute_recommendations_query(query, *params)
+                popular_items = [row['item_id'] for row in popular_results]
+                
+                if not popular_items:
+                    continue
+                
+                # Filter for in_stock items using main database
+                stock_query = """
+                    SELECT id::text as item_id
+                    FROM handpicked_presents
+                    WHERE id::text = ANY($1::text[])
+                      AND status = 'in_stock'
+                      AND user_id IS NULL
+                    ORDER BY array_position($1::text[], id::text)
+                """
+                
+                results = await db.execute_main_query(stock_query, popular_items)
                 
                 items = [row['item_id'] for row in results]
                 if items:
