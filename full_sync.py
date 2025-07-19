@@ -427,7 +427,7 @@ class FullSyncManager:
                     WHERE l1.handpicked_present_id != l2.handpicked_present_id
                       AND l1.handpicked_present_id::text < l2.handpicked_present_id::text  -- Avoid duplicates
                     GROUP BY l1.handpicked_present_id, l2.handpicked_present_id
-                    HAVING COUNT(*) >= 3  -- Minimum 3 users must like both items
+                    HAVING COUNT(*) >= 2  -- Minimum 2 users must like both items
                 ),
                 item_totals AS (
                     SELECT 
@@ -447,7 +447,7 @@ class FullSyncManager:
                 FROM item_pairs ip
                 JOIN item_totals it1 ON ip.item_a = it1.item_id
                 JOIN item_totals it2 ON ip.item_b = it2.item_id
-                WHERE ip.co_occurrence_count::float / (it1.total_likes + it2.total_likes - ip.co_occurrence_count) >= 0.1  -- 10% minimum similarity
+                WHERE ip.co_occurrence_count::float / (it1.total_likes + it2.total_likes - ip.co_occurrence_count) >= 0.05  -- 5% minimum similarity
                 ORDER BY similarity_score DESC
                 LIMIT 100000  -- Limit to top 100k similarities
             """

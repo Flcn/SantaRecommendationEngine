@@ -146,6 +146,14 @@ class RecommendationServiceV2:
                     request.user_id, request.geo_id, user_likes
                 )
                 algorithm_used = "collaborative"
+                
+                # Fallback to content-based if collaborative returns 0 items
+                if not recommended_items:
+                    logger.info(f"Collaborative filtering returned 0 items for user {request.user_id}, falling back to content-based")
+                    recommended_items = await RecommendationServiceV2._get_content_based_recommendations(
+                        request.user_id, request.geo_id, user_likes, user_profile
+                    )
+                    algorithm_used = "collaborative_fallback_content"
             elif user_profile and user_profile.interaction_count > 0:
                 # Use content-based for users with some data
                 recommended_items = await RecommendationServiceV2._get_content_based_recommendations(
@@ -360,7 +368,10 @@ class RecommendationServiceV2:
         """Get collaborative recommendations using item-based similarity"""
         
         if not user_likes:
+            logger.info(f"[COLLABORATIVE] User {user_id} has no likes, returning empty")
             return []
+        
+        logger.info(f"[COLLABORATIVE] User {user_id} has {len(user_likes)} likes: {user_likes[:5]}...")
         
         # Get items similar to what user already likes
         similar_items_query = """
@@ -372,7 +383,7 @@ class RecommendationServiceV2:
                 similarity_score
             FROM item_similarities
             WHERE (item_a = ANY($1::text[]) OR item_b = ANY($1::text[]))
-              AND similarity_score >= 0.2  -- Minimum similarity threshold
+              AND similarity_score >= 0.1  -- Minimum similarity threshold (lowered from 0.2)
             ORDER BY similarity_score DESC
             LIMIT 200
         """
@@ -381,7 +392,10 @@ class RecommendationServiceV2:
             similar_items_query, user_likes
         )
         
+        logger.info(f"[COLLABORATIVE] Found {len(similar_items)} similar items from database")
+        
         if not similar_items:
+            logger.info(f"[COLLABORATIVE] No similar items found for user {user_id}, returning empty")
             return []
         
         # Weight similar items by their similarity scores
@@ -395,6 +409,8 @@ class RecommendationServiceV2:
         # Get top weighted items
         sorted_items = sorted(item_scores.items(), key=lambda x: x[1], reverse=True)
         item_ids = [item[0] for item in sorted_items[:100]]
+        
+        logger.info(f"[COLLABORATIVE] After scoring: {len(item_ids)} candidate items")
         
         # Filter by geo, stock, etc.
         recommendations_query = """
@@ -418,6 +434,8 @@ class RecommendationServiceV2:
             geo_id,
             user_likes if user_likes else None
         )
+        
+        logger.info(f"[COLLABORATIVE] Final filtered results: {len(results)} items for user {user_id}")
         
         return [row['item_id'] for row in results]
     
