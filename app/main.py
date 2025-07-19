@@ -5,10 +5,13 @@ FastAPI application for MySanta recommendation service
 import logging
 import asyncio
 import secrets
+import time
+import json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.database import db
 from app.models import (
@@ -123,6 +126,7 @@ async def get_popular_items(request: PopularItemsRequest, username: str = Depend
         logger.info(f"Getting popular items for geo {request.user_params.geo_id}, "
                    f"demographics: {request.user_params.gender}/{request.user_params.age}, "
                    f"page: {request.pagination.page}")
+        logger.info(f"Popular items request parameters: {request.dict()}")
         
         response = await RecommendationServiceV2.get_popular_items(request)
         
@@ -156,6 +160,7 @@ async def get_personalized_recommendations(request: PersonalizedRequest, usernam
     try:
         logger.info(f"Getting personalized recommendations for user {request.user_id}, "
                    f"geo {request.geo_id}, page: {request.pagination.page}")
+        logger.info(f"Personalized request parameters: {request.dict()}")
         
         response = await RecommendationServiceV2.get_personalized_recommendations(request)
         
@@ -186,6 +191,7 @@ async def get_user_profile(user_id: int, username: str = Depends(verify_credenti
     """
     try:
         logger.info(f"Getting profile for user {user_id}")
+        logger.info(f"User profile request - user_id: {user_id}, type: {type(user_id)}")
         
         # Get profile from recommendations DB
         query = """
@@ -336,6 +342,7 @@ async def sync_user_profile(
     """
     try:
         logger.info(f"Syncing demographics for user {user_id}: {demographics.dict()}")
+        logger.info(f"Demographics sync request - user_id: {user_id}, type: {type(user_id)}, data: {demographics.dict()}")
         
         # Store user demographics in cache for immediate use
         cache_key = f"user_demographics:{user_id}"
