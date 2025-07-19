@@ -596,24 +596,33 @@ class RecommendationServiceV2:
         # Try each variant until we get results
         for variant in query_variants:
             try:
-                query = """
+                # Build dynamic query based on what's available
+                where_conditions = ["geo_id = $1"]
+                params = [geo_id]
+                param_count = 1
+                
+                # Add gender condition
+                param_count += 1
+                where_conditions.append(f"gender = ${param_count}")
+                params.append(variant['gender'])
+                
+                # Add age_group condition only if not 'any' (since 'any' doesn't exist in data)
+                if variant['age_group'] != 'any':
+                    param_count += 1
+                    where_conditions.append(f"age_group = ${param_count}")
+                    params.append(variant['age_group'])
+                
+                # Skip category filtering for now (let all categories through)
+                
+                query = f"""
                     SELECT item_id
                     FROM popular_items
-                    WHERE geo_id = $1
-                      AND gender = $2
-                      AND age_group = $3
-                      AND category = $4
+                    WHERE {' AND '.join(where_conditions)}
                     ORDER BY popularity_score DESC
                     LIMIT 100
                 """
                 
-                results = await db.execute_recommendations_query(
-                    query, 
-                    geo_id, 
-                    variant['gender'], 
-                    variant['age_group'], 
-                    variant['category']
-                )
+                results = await db.execute_recommendations_query(query, *params)
                 
                 items = [row['item_id'] for row in results]
                 if items:
