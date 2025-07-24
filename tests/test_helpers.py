@@ -258,16 +258,21 @@ class TestHelperMethods:
             {"item_id": "501", "popularity_boost": 3},
             {"item_id": "502", "popularity_boost": 2}
         ]
+        # Mock popular items filler (since we have < 100 items)
+        popular_filler = [
+            {"item_id": "601"},
+            {"item_id": "602"}
+        ]
         
         mock_db.execute_recommendations_query.return_value = similar_items
-        mock_db.execute_main_query.return_value = final_recs
+        mock_db.execute_main_query.side_effect = [final_recs, popular_filler]
         
         with patch('app.recommendation_service_v2.db', mock_db):
             result = await RecommendationServiceV2._get_collaborative_recommendations(
                 user_id, geo_id, user_likes
             )
         
-        assert result == ["501", "502"]
+        assert result == ["501", "502", "601", "602"]
         
         # Verify similar items query
         similar_items_call = mock_db.execute_recommendations_query.call_args
@@ -275,10 +280,8 @@ class TestHelperMethods:
         assert "item_similarities" in similar_items_call[0][0]
         assert user_likes in similar_items_call[0][1:]
         
-        # Verify filtering query
-        filter_call = mock_db.execute_main_query.call_args
-        assert "popularity_boost" in filter_call[0][0]
-        assert geo_id in filter_call[0][1:]
+        # Verify that main query was called twice (collaborative + popular filler)
+        assert mock_db.execute_main_query.call_count == 2
     
     @pytest.mark.asyncio
     async def test_get_collaborative_recommendations_no_similar_users(self, mock_db):

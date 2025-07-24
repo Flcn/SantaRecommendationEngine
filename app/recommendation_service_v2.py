@@ -443,7 +443,7 @@ class RecommendationServiceV2:
             logger.info(f"[COLLABORATIVE] Not enough similar items ({len(collaborative_items)}), adding popular items to fill")
             
             # Get popular items to fill the gap
-            excluded_items = set(collaborative_items + user_likes)
+            excluded_items = list(set(collaborative_items + user_likes))  # Remove duplicates
             popular_fill_query = """
                 SELECT hp.id::text as item_id
                 FROM handpicked_presents hp
@@ -455,7 +455,7 @@ class RecommendationServiceV2:
                 WHERE hp.geo_id = $1
                   AND hp.status = 'in_stock'
                   AND hp.user_id IS NULL  -- Only public presents
-                  AND hp.id::text != ALL($2::text[])  -- Exclude already selected and liked items
+                  AND ($2::text[] IS NULL OR hp.id::text != ALL($2::text[]))  -- Exclude already selected and liked items
                 ORDER BY COALESCE(hl.like_count, 0) DESC
                 LIMIT $3
             """
@@ -464,15 +464,16 @@ class RecommendationServiceV2:
             popular_results = await db.execute_main_query(
                 popular_fill_query,
                 geo_id,
-                list(excluded_items),
+                excluded_items if excluded_items else None,
                 items_needed
             )
             
             popular_items = [row['item_id'] for row in popular_results]
             logger.info(f"[COLLABORATIVE] Added {len(popular_items)} popular items as filler")
             
-            # Combine results: collaborative items first, then popular items
-            return collaborative_items + popular_items
+            # Combine results: collaborative items first, then popular items (no duplicates)
+            all_items = collaborative_items + popular_items
+            return list(dict.fromkeys(all_items))  # Remove any duplicates while preserving order
         
         return collaborative_items
     
