@@ -142,8 +142,10 @@ class RecommendationServiceV2:
             
             if user_profile and user_profile.interaction_count >= 3:
                 # Use collaborative filtering for users with enough data
+                # Calculate how many items we need for the current page request
+                items_needed = request.pagination.offset + request.pagination.limit
                 recommended_items = await RecommendationServiceV2._get_collaborative_recommendations(
-                    request.user_id, request.geo_id, user_likes
+                    request.user_id, request.geo_id, user_likes, items_needed
                 )
                 algorithm_used = "collaborative"
                 
@@ -352,18 +354,20 @@ class RecommendationServiceV2:
     async def _get_collaborative_recommendations(
         user_id: str, 
         geo_id: int, 
-        user_likes: List[str]
+        user_likes: List[str],
+        items_needed: int = 100
     ) -> List[str]:
         """Get collaborative filtering recommendations using item-based approach"""
         return await RecommendationServiceV2._get_collaborative_recommendations_via_items(
-            user_id, geo_id, user_likes
+            user_id, geo_id, user_likes, items_needed
         )
     
     @staticmethod
     async def _get_collaborative_recommendations_via_items(
         user_id: str, 
         geo_id: int, 
-        user_likes: List[str]
+        user_likes: List[str],
+        items_needed: int = 100
     ) -> List[str]:
         """Get collaborative recommendations using item-based similarity"""
         
@@ -439,8 +443,8 @@ class RecommendationServiceV2:
         logger.info(f"[COLLABORATIVE] Final filtered results: {len(collaborative_items)} items for user {user_id}")
         
         # If we don't have enough items, fill with popular items
-        if len(collaborative_items) < 100:  # Target up to 100 items for pagination
-            logger.info(f"[COLLABORATIVE] Not enough similar items ({len(collaborative_items)}), adding popular items to fill")
+        if len(collaborative_items) < items_needed:
+            logger.info(f"[COLLABORATIVE] Not enough similar items ({len(collaborative_items)}/{items_needed}), adding popular items to fill")
             
             # Get popular items to fill the gap
             excluded_items = list(set(collaborative_items + user_likes))  # Remove duplicates
@@ -460,12 +464,12 @@ class RecommendationServiceV2:
                 LIMIT $3
             """
             
-            items_needed = 100 - len(collaborative_items)
+            items_to_add = items_needed - len(collaborative_items)
             popular_results = await db.execute_main_query(
                 popular_fill_query,
                 geo_id,
                 excluded_items if excluded_items else None,
-                items_needed
+                items_to_add
             )
             
             popular_items = [row['item_id'] for row in popular_results]
