@@ -46,16 +46,16 @@ class TestPersonalizedRecommendations:
     async def test_get_personalized_recommendations_new_user(self, mock_db, sample_personalized_request):
         """Test personalized recommendations for new user (0 interactions)"""
         mock_db.cache_get.return_value = None
-        mock_db.execute_main_query.return_value = []  # No user likes
+        mock_db.execute_main_query.return_value = []  # No user likes  
         mock_db.execute_recommendations_query_one.return_value = None  # No user profile
         mock_db.cache_get.side_effect = [None]  # No cached demographics
-        
-        # Mock fallback popular items
+
+        # Mock fallback popular items from recommendations DB
         fallback_items = [{"item_id": "401"}, {"item_id": "402"}]
         mock_db.execute_recommendations_query.return_value = fallback_items
         mock_db.execute_main_query.side_effect = [
             [],  # User likes query
-            [{"id": "401"}, {"id": "402"}]  # Filtered fallback items
+            [{"item_id": "401"}, {"item_id": "402"}]  # Stock filtered fallback items (main DB)
         ]
         
         with patch('app.recommendation_service_v2.db', mock_db):
@@ -98,16 +98,27 @@ class TestPersonalizedRecommendations:
         ]
         
         mock_db.execute_recommendations_query.return_value = similar_items
+        
+        # Mock final recommendations after filtering (2 queries: collaborative + popular filler)
+        final_recs = [
+            {"item_id": "501", "popularity_boost": 3},
+            {"item_id": "502", "popularity_boost": 2}
+        ]
+        popular_filler = [
+            {"item_id": "601"},
+            {"item_id": "602"}
+        ]
         mock_db.execute_main_query.side_effect = [
             sample_user_likes,  # User likes
-            [{"item_id": "501"}, {"item_id": "502"}]  # Filtered results
+            final_recs,         # Collaborative recommendations 
+            popular_filler      # Popular items filler (< 100 items so needs filler)
         ]
         
         with patch('app.recommendation_service_v2.db', mock_db):
             response = await RecommendationServiceV2.get_personalized_recommendations(sample_personalized_request)
         
-        # Assertions
-        assert response.items == ['501', '502']
+        # Assertions - collaborative + popular filler items
+        assert response.items == ['501', '502', '601', '602']
         assert response.algorithm_used == "collaborative"
         assert response.cache_hit is False
     
@@ -175,14 +186,14 @@ class TestPersonalizedRecommendations:
         mock_db.execute_main_query.return_value = sample_user_likes
         mock_db.execute_recommendations_query_one.return_value = None  # New user
         
-        # Mock fallback items before and after filtering
+        # Mock fallback items before and after filtering  
         fallback_items = [{"item_id": str(i)} for i in range(701, 710)]  # 9 items
-        filtered_items = [{"id": str(i)} for i in range(701, 706)]  # 5 items after price filter
+        filtered_items = [{"item_id": str(i)} for i in range(701, 706)]  # 5 items after price filter
         
         mock_db.execute_recommendations_query.return_value = fallback_items
         mock_db.execute_main_query.side_effect = [
             sample_user_likes,  # User likes
-            filtered_items  # Filtered results
+            filtered_items  # Stock filtered results
         ]
         
         with patch('app.recommendation_service_v2.db', mock_db):
@@ -208,7 +219,7 @@ class TestPersonalizedRecommendations:
         mock_db.execute_recommendations_query.return_value = large_dataset
         mock_db.execute_main_query.side_effect = [
             sample_user_likes,  # User likes
-            [{"id": str(i)} for i in range(1, 101)]  # Filtered results
+            [{"item_id": str(i)} for i in range(1, 101)]  # Stock filtered results
         ]
         
         # Test page 2
