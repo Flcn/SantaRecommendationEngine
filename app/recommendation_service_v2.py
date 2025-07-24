@@ -435,9 +435,46 @@ class RecommendationServiceV2:
             user_likes if user_likes else None
         )
         
-        logger.info(f"[COLLABORATIVE] Final filtered results: {len(results)} items for user {user_id}")
+        collaborative_items = [row['item_id'] for row in results]
+        logger.info(f"[COLLABORATIVE] Final filtered results: {len(collaborative_items)} items for user {user_id}")
         
-        return [row['item_id'] for row in results]
+        # If we don't have enough items, fill with popular items
+        if len(collaborative_items) < 100:  # Target up to 100 items for pagination
+            logger.info(f"[COLLABORATIVE] Not enough similar items ({len(collaborative_items)}), adding popular items to fill")
+            
+            # Get popular items to fill the gap
+            excluded_items = set(collaborative_items + user_likes)
+            popular_fill_query = """
+                SELECT hp.id::text as item_id
+                FROM handpicked_presents hp
+                LEFT JOIN (
+                    SELECT handpicked_present_id, COUNT(*) as like_count
+                    FROM handpicked_likes
+                    GROUP BY handpicked_present_id
+                ) hl ON hp.id = hl.handpicked_present_id
+                WHERE hp.geo_id = $1
+                  AND hp.status = 'in_stock'
+                  AND hp.user_id IS NULL  -- Only public presents
+                  AND hp.id::text != ALL($2::text[])  -- Exclude already selected and liked items
+                ORDER BY COALESCE(hl.like_count, 0) DESC
+                LIMIT $3
+            """
+            
+            items_needed = 100 - len(collaborative_items)
+            popular_results = await db.execute_main_query(
+                popular_fill_query,
+                geo_id,
+                list(excluded_items),
+                items_needed
+            )
+            
+            popular_items = [row['item_id'] for row in popular_results]
+            logger.info(f"[COLLABORATIVE] Added {len(popular_items)} popular items as filler")
+            
+            # Combine results: collaborative items first, then popular items
+            return collaborative_items + popular_items
+        
+        return collaborative_items
     
     @staticmethod
     async def _get_collaborative_recommendations_legacy(
