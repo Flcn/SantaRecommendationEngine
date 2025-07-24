@@ -424,8 +424,12 @@ class FullSyncManager:
                         COUNT(*) as co_occurrence_count
                     FROM handpicked_likes l1
                     JOIN handpicked_likes l2 ON l1.user_id = l2.user_id
+                    JOIN handpicked_presents hp1 ON l1.handpicked_present_id = hp1.id
+                    JOIN handpicked_presents hp2 ON l2.handpicked_present_id = hp2.id
                     WHERE l1.handpicked_present_id != l2.handpicked_present_id
                       AND l1.handpicked_present_id::text < l2.handpicked_present_id::text  -- Avoid duplicates
+                      AND hp1.user_id IS NULL  -- Only public items
+                      AND hp2.user_id IS NULL  -- Only public items
                     GROUP BY l1.handpicked_present_id, l2.handpicked_present_id
                     HAVING COUNT(*) >= 2  -- Minimum 2 users must like both items
                 ),
