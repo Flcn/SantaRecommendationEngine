@@ -35,8 +35,8 @@ jobs:
     - name: Extract version
       shell: bash
       run: |
-        # Extract branch/tag name from Git ref
-        VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+        # Extract branch/tag name from Git ref and replace slashes with hyphens
+        VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,' | sed 's/\//-/g')
         
         # Remove 'v' prefix from version tags
         [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
@@ -59,7 +59,6 @@ jobs:
         fi
 
     - name: Build Docker image
-      if: github.event_name != 'pull_request'
       run: |
         docker build \
           --file Dockerfile.production \
