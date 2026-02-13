@@ -24,11 +24,13 @@ class UserParams(BaseModel):
 class Filters(BaseModel):
     """Common filters for recommendations"""
     price_from: Optional[float] = Field(None, ge=0, description="Minimum price")
-    price_to: Optional[float] = Field(None, ge=0, description="Maximum price") 
+    price_to: Optional[float] = Field(None, ge=0, description="Maximum price")
     category: Optional[str] = Field(None, description="Category filter")
     suitable_for: Optional[str] = Field(None, description="Suitable for: 'friend', 'family', 'colleague'")
     acquaintance_level: Optional[str] = Field(None, description="Acquaintance level: 'close', 'casual', 'formal'")
     platform: Optional[str] = Field(None, description="Platform filter")
+    gender: Optional[str] = Field(None, description="Gender filter: 'm' or 'f'")
+    age: Optional[str] = Field(None, description="Age range filter: '18-24', '25-34', '35-44', '45+'")
     
     @field_validator('price_to')
     @classmethod
@@ -52,6 +54,9 @@ class PersonalizedRequest(BaseModel):
     geo_id: int = Field(..., description="Geographic region ID")
     filters: Optional[Filters] = None
     pagination: Pagination = Pagination()
+    wish_text: Optional[str] = Field(None, description="Parsed wish keywords, comma-separated product names")
+    unwish_text: Optional[str] = Field(None, description="Parsed unwish keywords, comma-separated product names to exclude")
+    locale: Optional[str] = Field(None, description="User locale: 'ru', 'en', 'es', etc.")
 
 
 class PaginationInfo(BaseModel):
