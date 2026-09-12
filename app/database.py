@@ -9,6 +9,28 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _redact_url(url: Optional[str]) -> str:
+    """Return a connection URL safe for logs: the password (if any) replaced by ***.
+
+    The Redis and PostgreSQL URLs carry credentials (Redis ACL users since SEC-03),
+    so they must never reach the pod logs verbatim.
+    """
+    if not url:
+        return str(url)
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+        parts = urlsplit(url)
+        if parts.password is None:
+            return url
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        userinfo = f"{parts.username}:***@" if parts.username is not None else ":***@"
+        return urlunsplit((parts.scheme, userinfo + host, parts.path, parts.query, parts.fragment))
+    except Exception:  # never let log redaction break startup
+        return "<redacted>"
+
+
 class DatabaseManager:
     """Manages dual database connections and caching"""
     
@@ -20,9 +42,9 @@ class DatabaseManager:
     async def init_pools(self):
         """Initialize database connection pools"""
         try:
-            logger.info(f"Connecting to main database: {settings.main_database_url}")
-            logger.info(f"Connecting to recommendations database: {settings.recommendations_database_url}")
-            logger.info(f"Connecting to Redis: {settings.recommendations_redis_url}")
+            logger.info(f"Connecting to main database: {_redact_url(settings.main_database_url)}")
+            logger.info(f"Connecting to recommendations database: {_redact_url(settings.recommendations_database_url)}")
+            logger.info(f"Connecting to Redis: {_redact_url(settings.recommendations_redis_url)}")
             
             # Main database pool (READ-ONLY)
             self.main_pool = await asyncpg.create_pool(
